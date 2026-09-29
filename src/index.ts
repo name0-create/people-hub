@@ -1,5 +1,5 @@
 import { App, TFile } from "obsidian";
-import { addDays, diffDays, nextBirthday, parseBirthdate, parseDate, today } from "./dates";
+import { addDays, diffDays, isLeapYear, nextBirthday, parseBirthdate, parseDate, parseMeeting, today } from "./dates";
 import { parseSocials } from "./socials";
 import { CarnegieScores, CARNEGIE_LABELS, Person, PluginSettings, TalkLog, Tier, TIERS } from "./types";
 
@@ -148,6 +148,7 @@ export class PersonIndex {
       birthdate: bd,
       birthday: bd ? nextBirthday(bd, t) : null,
       anniversary: parseDate(fm.anniversary),
+      nextMeeting: parseMeeting(fm.next_meeting, str(pick(fm, ["next_meeting_note", "next_meeting_topic"])), t),
       lastContact,
       nextContact: nextContact ?? (lastContact ? addDays(lastContact, cadence) : null),
       frequency: str(fm.frequency),
@@ -180,9 +181,25 @@ export class PersonIndex {
     const map = new Map<number, Person[]>();
     for (const p of this.all()) {
       if (!p.birthdate || INACTIVE.has(p.status) || p.birthdate.month !== month0 + 1) continue;
-      map.set(p.birthdate.day, [...(map.get(p.birthdate.day) ?? []), p]);
+      let day = p.birthdate.day;
+      if (month0 === 1 && day === 29 && !isLeapYear(year)) day = 28;
+      map.set(day, [...(map.get(day) ?? []), p]);
     }
     return map;
+  }
+  meetingsInMonth(year: number, month0: number): Map<number, Person[]> {
+    const map = new Map<number, Person[]>();
+    for (const p of this.all()) {
+      const m = p.nextMeeting;
+      if (!m || m.date.getFullYear() !== year || m.date.getMonth() !== month0) continue;
+      map.set(m.date.getDate(), [...(map.get(m.date.getDate()) ?? []), p]);
+    }
+    return map;
+  }
+  upcomingMeetings(days: number): Person[] {
+    return this.all()
+      .filter(p => p.nextMeeting && p.nextMeeting.days <= days)
+      .sort((a, b) => a.nextMeeting!.days - b.nextMeeting!.days);
   }
   missingBirthdays(): Person[] {
     return this.all().filter(p => !p.birthdate && !INACTIVE.has(p.status));

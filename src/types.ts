@@ -19,6 +19,8 @@ export interface SocialLink { platform: string; label: string; handle: string; u
 export interface BirthDate { month: number; day: number; year: number | null; }
 export interface BirthdayInfo { date: Date; age: number | null; days: number; }
 
+export interface MeetingInfo { date: Date; time: string; note: string; days: number; }
+
 export interface TalkLog {
   date: Date | null; where: string; note: string;
   learned: string; next: string; presence: number; energy: number;
@@ -38,6 +40,7 @@ export interface Person {
   birthdate: BirthDate | null;
   birthday: BirthdayInfo | null;
   anniversary: Date | null;
+  nextMeeting: MeetingInfo | null;
   lastContact: Date | null;
   nextContact: Date | null;
   frequency: string;
@@ -71,6 +74,15 @@ export interface PluginSettings {
   weekStartsOn: 0 | 1;
   showStatusBar: boolean;
   startupNotice: boolean;
+  // v0.2
+  autoInjectBirthdays: boolean;
+  injectHeading: string;
+  injectLookahead: number;
+  injectPosition: "top" | "bottom";
+  dailyNoteFolder: string;
+  dailyNoteFormat: string;
+  icsPath: string;
+  icsIncludeMeetings: boolean;
 }
 export const DEFAULT_SETTINGS: PluginSettings = {
   peopleFolder: "20 - PEOPLE",
@@ -84,5 +96,13 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   templaterTemplate: "99 - SYSTEM/Templates/Template - Person - Full.md",
   weekStartsOn: 1,
   showStatusBar: true,
-  startupNotice: true
+  startupNotice: true,
+  autoInjectBirthdays: false,
+  injectHeading: "## 🎂 Birthdays",
+  injectLookahead: 7,
+  injectPosition: "top",
+  dailyNoteFolder: "",
+  dailyNoteFormat: "",
+  icsPath: "People Hub/people.ics",
+  icsIncludeMeetings: true
 };

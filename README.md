@@ -65,6 +65,25 @@ days: 14
 7. **Interaction Log** uses numbered Meta Bind rows (`log_date1`, `log_date2`): doesn't scale. The plugin's *Log interaction* command appends bullets under `## 🕘 Contact History` instead.
 8. Templater `placeEntity` may also create/move the note, so using it with the plugin's "Use Templater" toggle may double up. Prefer the built-in creator + a body template.
 
+## v0.2 features
+
+**Main page** — ribbon icon / *Open People Hub* opens a full-page **People** grid (search, sort, company + tag filters) with a **Calendar** tab. The sidebar is still available via *People Hub: Open sidebar*.
+
+**Full-page calendar** — month grid with 🎂 birthdays and 📅 next meetings. Click a birthday to open the note, a meeting to edit it. *Export .ics* button in the toolbar.
+
+**Edit-in-place next meeting** — every person card (main page) and the Today tab's *Meetings* section show a clickable meeting line. Click → date / time / topic → Save. Stored as:
+
+```yaml
+next_meeting: 2026-10-03T14:30   # or just 2026-10-03
+next_meeting_note: Coffee at Java
+```
+
+**Birthday → daily note** — writes a block between `<!-- people-hub:birthdays -->` markers (safe to re-run; only that block is ever touched). Command: *Inject birthdays into this daily note*. Enable *Auto-inject* in settings to do it whenever today's daily note opens. Uses Obsidian's Daily Notes folder/format unless overridden.
+
+**.ics export** — *Export birthdays & meetings (.ics)* writes `People Hub/people.ics` (configurable). Birthdays are yearly all-day recurring events (Feb 29 handled); meetings are timed 1-hour events. Import the file into Google/Apple/Outlook, or subscribe to it if you sync the vault somewhere reachable.
+
+**Import contacts** — *Import contacts (.vcf / Google CSV)* (or the **Import** button on the People page). Reads vCard 2.1/3/4 (iPhone, Android, Google, Outlook) and Google Contacts / Google Workspace CSV. Detects duplicates by name / email / phone, previews, then creates one note per contact in your People folder. Imported people get `last_contact: today` and `frequency: quarterly`, so they don't flood your reach-out list.
+
 ## Roadmap
 - **v0.1 (this)**: index, sidebar (Today/People/Birthdays/Meetings), month calendar, log/snooze/pause, new person, code block, status bar, startup notice
 - **v0.2**: birthday → daily-note injection; `.ics` export; full-page calendar tab; edit-in-place next meeting; import from `.vcf`/Google Contacts CSV

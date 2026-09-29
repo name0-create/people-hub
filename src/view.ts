@@ -2,6 +2,7 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import type PeopleHubPlugin from "./main";
 import { diffDays, today, toISO } from "./dates";
 import { lunarInfo, westernSign } from "./zodiac";
+import { renderMeetingLine } from "./meeting";
 import { CARNEGIE_LABELS, Person, TIERS } from "./types";
 import { birthdayMeta, carnegieBar, reachOutMeta, relDays, renderPersonRow, renderSocials } from "./ui";
 
@@ -69,6 +70,16 @@ export class PeopleView extends ItemView {
     const b = idx.upcomingBirthdays(s.birthdayLookahead).filter(p => p.birthday!.days > 0);
     this.section(body, `🎂 Upcoming · ${s.birthdayLookahead}d`, b.length,
       l => b.forEach(p => renderPersonRow(this.plugin, l, p, birthdayMeta(p), false)), "Nothing coming up.");
+
+    // Next meetings (edit in place)
+    const mt = idx.upcomingMeetings(s.meetingLookahead);
+    this.section(body, `📅 Meetings · ${s.meetingLookahead}d`, mt.length, l => mt.forEach(p => {
+      const row = l.createDiv({ cls: ["ph-row", `ph-tier-${p.tier}`] });
+      const main = row.createDiv({ cls: "ph-row-main" });
+      const a = main.createEl("a", { text: p.name, cls: "ph-name" });
+      a.addEventListener("click", e => { e.preventDefault(); this.plugin.openPerson(p, e.ctrlKey || e.metaKey); });
+      renderMeetingLine(main, this.plugin, p);
+    }), "No meetings scheduled.");
 
     // Reach out
     const r = idx.reachOut();

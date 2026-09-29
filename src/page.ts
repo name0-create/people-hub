@@ -1,6 +1,10 @@
 import { ItemView, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type PeopleHubPlugin from "./main";
 import type { Person } from "./types";
+import { exportIcs } from "./ics";
+import { ImportModal } from "./importer";
+import { MeetingModal, renderMeetingLine } from "./meeting";
+import { today } from "./dates";
 
 export const PAGE_TYPE = "people-hub-page";
 type Sort = "name-asc" | "name-desc" | "contact-recent" | "contact-oldest" | "birthday" | "carnegie";
@@ -13,8 +17,14 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 export class PeoplePageView extends ItemView {
   private search = ""; private sort: Sort = "name-asc"; private company = ""; private tag = "";
+  private tab: "people" | "calendar" = "people";
+  private calYear = today().getFullYear(); private calMonth = today().getMonth();
 
-  constructor(leaf: WorkspaceLeaf, private plugin: PeopleHubPlugin) { super(leaf); }
+  constructor(leaf: WorkspaceLeaf, private plugin: PeopleHubPlugin) {
+    super(leaf);
+    this.tab = plugin.pendingPageTab ?? "people"; plugin.pendingPageTab = null;
+  }
+  setTab(t: "people" | "calendar") { this.tab = t; this.render(true); }
   getViewType() { return PAGE_TYPE; }
   getDisplayText() { return "People"; }
   getIcon() { return "users"; }
@@ -44,10 +54,23 @@ export class PeoplePageView extends ItemView {
     titles.createDiv({ text: "KNOWN", cls: "ph-page-eyebrow" });
     titles.createEl("h1", { text: "People", cls: "ph-page-title" });
     titles.createDiv({ text: `${all.length} people in ${this.plugin.settings.peopleFolder}`, cls: "ph-page-sub" });
-    const add = head.createEl("button", { cls: ["ph-page-add", "mod-cta"] });
+    const actions = head.createDiv({ cls: "ph-page-actions" });
+    const imp = actions.createEl("button", { cls: "ph-page-import" });
+    setIcon(imp.createSpan({ cls: "ph-page-add-ico" }), "upload");
+    imp.createSpan({ text: "Import" });
+    imp.addEventListener("click", () => new ImportModal(this.app, this.plugin).open());
+    const add = actions.createEl("button", { cls: ["ph-page-add", "mod-cta"] });
     setIcon(add.createSpan({ cls: "ph-page-add-ico" }), "user-plus");
     add.createSpan({ text: "Add person" });
     add.addEventListener("click", () => this.plugin.newPerson());
+
+    const seg = wrap.createDiv({ cls: "ph-seg" });
+    for (const [id, label] of [["people", "People"], ["calendar", "Calendar"]] as const) {
+      const b = seg.createEl("button", { text: label, cls: "ph-seg-btn" });
+      if (id === this.tab) b.addClass("is-active");
+      b.addEventListener("click", () => this.setTab(id));
+    }
+    if (this.tab === "calendar") { this.renderCalendar(wrap); return; }
 
     // Controls
     const bar = wrap.createDiv({ cls: "ph-page-bar" });
@@ -113,8 +136,54 @@ export class PeoplePageView extends ItemView {
     const sub = p.company || p.role || p.typePerson;
     if (sub) info.createDiv({ text: sub, cls: "ph-pcard-sub" });
     if (p.lastContact) info.createDiv({ text: `Last contact ${iso(p.lastContact)}`, cls: "ph-pcard-meta" });
+    renderMeetingLine(info, this.plugin, p);
     if (p.favorite) setIcon(card.createSpan({ cls: "ph-pcard-star" }), "star");
     card.addEventListener("click", e => this.plugin.openPerson(p, e.ctrlKey || e.metaKey));
     card.addEventListener("auxclick", e => { if (e.button === 1) this.plugin.openPerson(p, true); });
+  }
+  // ─── full-page calendar ───────────────────────────────────────────────────
+  private renderCalendar(wrap: HTMLElement) {
+    const s = this.plugin.settings;
+    const bar = wrap.createDiv({ cls: "ph-fcal-bar" });
+    bar.createEl("h2", { text: new Date(this.calYear, this.calMonth, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }), cls: "ph-fcal-title" });
+    const btns = bar.createDiv({ cls: "ph-calbtns" });
+    const shift = (d: number) => { const dt = new Date(this.calYear, this.calMonth + d, 1); this.calYear = dt.getFullYear(); this.calMonth = dt.getMonth(); this.render(true); };
+    btns.createEl("button", { text: "◀ Prev", cls: "ph-btn" }).addEventListener("click", () => shift(-1));
+    btns.createEl("button", { text: "Today", cls: "ph-btn" }).addEventListener("click", () => { const n = today(); this.calYear = n.getFullYear(); this.calMonth = n.getMonth(); this.render(true); });
+    btns.createEl("button", { text: "Next ▶", cls: "ph-btn" }).addEventListener("click", () => shift(1));
+    btns.createEl("button", { text: "Export .ics", cls: "ph-btn" }).addEventListener("click", () => { void exportIcs(this.plugin); });
+    wrap.createDiv({ text: "🎂 birthday · 📅 next meeting (click to edit)", cls: "ph-page-count" });
+
+    const grid = wrap.createDiv({ cls: "ph-cal ph-cal-full" });
+    const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    for (let i = 0; i < 7; i++) grid.createDiv({ text: names[(i + s.weekStartsOn) % 7], cls: "ph-calhd" });
+    const offset = (new Date(this.calYear, this.calMonth, 1).getDay() - s.weekStartsOn + 7) % 7;
+    const dim = new Date(this.calYear, this.calMonth + 1, 0).getDate();
+    const total = Math.ceil((offset + dim) / 7) * 7;
+    const bdays = this.plugin.index.birthdaysInMonth(this.calYear, this.calMonth);
+    const meets = this.plugin.index.meetingsInMonth(this.calYear, this.calMonth);
+    const t = today();
+    for (let i = 0; i < total; i++) {
+      const day = i - offset + 1;
+      const cell = grid.createDiv({ cls: "ph-cell" });
+      if (day < 1 || day > dim) {
+        cell.addClass("is-out");
+        cell.createDiv({ text: String(new Date(this.calYear, this.calMonth, day).getDate()), cls: "ph-daynum" });
+        continue;
+      }
+      if (t.getFullYear() === this.calYear && t.getMonth() === this.calMonth && t.getDate() === day) cell.addClass("is-today");
+      const bs = bdays.get(day) ?? [], ms = meets.get(day) ?? [];
+      cell.createDiv({ text: String(day), cls: ["ph-daynum", bs.length || ms.length ? "has-bd" : ""].filter(Boolean) });
+      for (const p of bs) {
+        const chip = cell.createEl("a", { cls: "ph-chip", attr: { "aria-label": p.name } });
+        chip.createSpan({ text: "🎂" }); chip.createSpan({ text: p.name });
+        chip.addEventListener("click", e => { e.preventDefault(); this.plugin.openPerson(p, e.ctrlKey || e.metaKey); });
+      }
+      for (const p of ms) {
+        const chip = cell.createEl("a", { cls: ["ph-chip", "ph-chip-meet"], attr: { "aria-label": `Edit meeting with ${p.name}` } });
+        chip.createSpan({ text: "📅" }); chip.createSpan({ text: `${p.nextMeeting!.time ? p.nextMeeting!.time + " " : ""}${p.name}` });
+        chip.addEventListener("click", e => { e.preventDefault(); new MeetingModal(this.app, this.plugin, p).open(); });
+      }
+    }
   }
 }

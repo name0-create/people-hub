@@ -7,12 +7,17 @@ import { DEFAULT_SETTINGS, Person, PluginSettings } from "./types";
 import { birthdayMeta, reachOutMeta } from "./ui";
 import { PeopleView, Tab, VIEW_TYPE } from "./view";
 import { PeoplePageView, PAGE_TYPE } from "./page";
+import { exportIcs } from "./ics";
+import { ImportModal } from "./importer";
+import { injectBirthdays, isTodayNote } from "./inject";
+import { MeetingModal } from "./meeting";
 import css from "../styles.css";
 
 export default class PeopleHubPlugin extends Plugin {
   settings!: PluginSettings;
   index!: PersonIndex;
   pendingTab: Tab | null = null;
+  pendingPageTab: "people" | "calendar" | null = null;
   private statusEl: HTMLElement | null = null;
 
   private styleEl: HTMLStyleElement | null = null;
@@ -27,6 +32,7 @@ export default class PeopleHubPlugin extends Plugin {
     this.registerView(VIEW_TYPE, leaf => new PeopleView(leaf, this));
     this.registerView(PAGE_TYPE, leaf => new PeoplePageView(leaf, this));
     this.addRibbonIcon("users", "Open People", () => this.openPage());
+    this.addRibbonIcon("calendar-days", "People calendar", () => this.openPage("calendar"));
     this.addSettingTab(new PeopleSettingTab(this.app, this));
 
     this.addCommand({ id: "open-hub", name: "Open People Hub", callback: () => this.openPage() });
@@ -34,6 +40,22 @@ export default class PeopleHubPlugin extends Plugin {
     this.addCommand({ id: "open-today", name: "People Hub: Today's reach-out + birthdays", callback: () => this.activateView("today") });
     this.addCommand({ id: "open-birthdays", name: "People Hub: Birthday calendar", callback: () => this.activateView("birthdays") });
     this.addCommand({ id: "open-carnegie", name: "People Hub: Carnegie scores", callback: () => this.activateView("carnegie") });
+    this.addCommand({ id: "open-calendar", name: "People Hub: Full-page calendar", callback: () => this.openPage("calendar") });
+    this.addCommand({ id: "export-ics", name: "People Hub: Export birthdays & meetings (.ics)", callback: () => { void exportIcs(this); } });
+    this.addCommand({ id: "import-contacts", name: "People Hub: Import contacts (.vcf / Google CSV)", callback: () => new ImportModal(this.app, this).open() });
+    this.addCommand({
+      id: "inject-birthdays", name: "People Hub: Inject birthdays into this daily note",
+      checkCallback: (checking: boolean) => {
+        const f = this.app.workspace.getActiveFile();
+        if (!f) return false;
+        if (!checking) void injectBirthdays(this, f, { announce: true });
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "edit-meeting", name: "People Hub: Edit next meeting…",
+      callback: () => new PersonPicker(this.app, this.index.all(), x => new MeetingModal(this.app, this, x).open()).open()
+    });
     this.addCommand({ id: "new-person", name: "People Hub: New person", callback: () => this.newPerson() });
     this.addCommand({
       id: "log-talk", name: "People Hub: Log talk",
@@ -95,6 +117,12 @@ export default class PeopleHubPlugin extends Plugin {
       });
     });
 
+    // v0.2 — auto-inject birthdays when today's daily note is opened
+    this.registerEvent(this.app.workspace.on("file-open", (f: TFile | null) => {
+      if (!f || !this.settings.autoInjectBirthdays || !isTodayNote(this, f)) return;
+      window.setTimeout(() => { void injectBirthdays(this, f); }, 400);   // let Templater / Daily Notes finish first
+    }));
+
     const onChange = debounce(() => this.refresh(), 500, true);
     this.registerEvent(this.app.metadataCache.on("changed", (f: TFile) => { if (this.index.isPersonFile(f)) onChange(); }));
     this.registerEvent(this.app.metadataCache.on("deleted", () => onChange()));
@@ -154,13 +182,15 @@ export default class PeopleHubPlugin extends Plugin {
     if (parts.length) new Notice(parts.join("\n"), 8000);
   }
 
-  async openPage() {
+  async openPage(tab?: "people" | "calendar") {
+    this.pendingPageTab = tab ?? null;
     let leaf = this.app.workspace.getLeavesOfType(PAGE_TYPE)[0];
     if (!leaf) {
       leaf = this.app.workspace.getLeaf("tab");
       await leaf.setViewState({ type: PAGE_TYPE, active: true });
     }
     this.app.workspace.revealLeaf(leaf);
+    if (tab && leaf.view instanceof PeoplePageView) leaf.view.setTab(tab);
   }
 
   async activateView(tab?: Tab) {
