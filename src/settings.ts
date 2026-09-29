@@ -19,6 +19,16 @@ export class PeopleSettingTab extends PluginSettingTab {
     new Setting(el).setName("Excluded folders").setDesc("Comma-separated. Always exclude your Templates folder.")
       .addText(t => t.setValue(s.excludeFolders).onChange(async v => { s.excludeFolders = v; await save(); }));
 
+    el.createEl("h3", { text: "Last contact from your notes" });
+    const people = this.plugin.index.all();
+    const derived = people.filter(p => p.lastContactSource === "note").length;
+    const linked = people.filter(p => p.mentions > 0).length;
+    el.createEl("p", { text: `${people.length} people · ${linked} mentioned in dated notes · ${derived} where a note is the latest contact`, cls: "ph-sub" });
+    new Setting(el).setName("Derive last contact from dated notes").setDesc("A [[link]] to a person in a daily note counts as contact. Links in unchecked to-dos, quotes and embeds are ignored. The most recent of this and last_contact wins. Uses the Daily Notes folder/format below.")
+      .addToggle(t => t.setValue(s.deriveContactFromNotes).onChange(async v => { s.deriveContactFromNotes = v; await save(); }));
+    new Setting(el).setName("Frontmatter date field").setDesc("For notes that aren't daily notes (e.g. one note per meeting): this field dates the note. Blank = off.")
+      .addText(t => t.setPlaceholder("date").setValue(s.journalDateField).onChange(async v => { s.journalDateField = v.trim(); await save(); }));
+
     el.createEl("h3", { text: "Reach-out cadence (days per tier)" });
     for (const tier of TIERS) {
       new Setting(el).setName(tier).addText(t => t.setValue(String(s.tierDays[tier])).onChange(async v => {

@@ -14,7 +14,7 @@ export class PersonPicker extends FuzzySuggestModal<Person> {
 }
 
 export class LogModal extends Modal {
-  constructor(app: App, private plugin: PeopleHubPlugin, private person: Person) { super(app); }
+  constructor(app: App, private plugin: PeopleHubPlugin, private person: Person, private onSaved?: () => void) { super(app); }
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
@@ -46,6 +46,7 @@ export class LogModal extends Modal {
       await logTalk(this.app, this.plugin.settings, this.person, e);
       new Notice(`Logged talk with ${this.person.name} · Presence ${e.presence}/5`);
       this.close();
+      this.onSaved?.();
     }));
   }
   onClose() { this.contentEl.empty(); }

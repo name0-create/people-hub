@@ -11,6 +11,7 @@ import { exportIcs } from "./ics";
 import { ImportModal } from "./importer";
 import { injectBirthdays, isTodayNote } from "./inject";
 import { MeetingModal } from "./meeting";
+import { ReachOutModal } from "./queue";
 import css from "../styles.css";
 
 export default class PeopleHubPlugin extends Plugin {
@@ -40,6 +41,7 @@ export default class PeopleHubPlugin extends Plugin {
     this.addCommand({ id: "open-today", name: "People Hub: Today's reach-out + birthdays", callback: () => this.activateView("today") });
     this.addCommand({ id: "open-birthdays", name: "People Hub: Birthday calendar", callback: () => this.activateView("birthdays") });
     this.addCommand({ id: "open-carnegie", name: "People Hub: Carnegie scores", callback: () => this.activateView("carnegie") });
+    this.addCommand({ id: "reach-out-queue", name: "People Hub: Who should I reach out to?", callback: () => this.startQueue() });
     this.addCommand({ id: "open-calendar", name: "People Hub: Full-page calendar", callback: () => this.openPage("calendar") });
     this.addCommand({ id: "export-ics", name: "People Hub: Export birthdays & meetings (.ics)", callback: () => { void exportIcs(this); } });
     this.addCommand({ id: "import-contacts", name: "People Hub: Import contacts (.vcf / Google CSV)", callback: () => new ImportModal(this.app, this).open() });
@@ -124,7 +126,8 @@ export default class PeopleHubPlugin extends Plugin {
     }));
 
     const onChange = debounce(() => this.refresh(), 500, true);
-    this.registerEvent(this.app.metadataCache.on("changed", (f: TFile) => { if (this.index.isPersonFile(f)) onChange(); }));
+    this.registerEvent(this.app.metadataCache.on("changed", (f: TFile) => { if (this.index.isPersonFile(f) || this.index.isJournalFile(f)) onChange(); }));
+    this.registerEvent(this.app.metadataCache.on("resolved", () => onChange()));
     this.registerEvent(this.app.metadataCache.on("deleted", () => onChange()));
     this.registerEvent(this.app.vault.on("rename", () => onChange()));
     this.registerInterval(window.setInterval(() => this.refresh(), 60 * 60 * 1000));
@@ -180,6 +183,11 @@ export default class PeopleHubPlugin extends Plugin {
     if (due) parts.push(`📞 ${due} to reach out to`);
     if (lowC.length) parts.push(`⚠️ Carnegie < 3: ${lowC.map(p => p.name).slice(0, 3).join(", ")}`);
     if (parts.length) new Notice(parts.join("\n"), 8000);
+  }
+
+  startQueue() {
+    if (!this.index.reachOut().length) { new Notice("People Hub: nobody to reach out to 🎉"); return; }
+    new ReachOutModal(this.app, this).open();
   }
 
   async openPage(tab?: "people" | "calendar") {

@@ -77,6 +77,13 @@ export async function snooze(app: App, p: Person, days: number): Promise<void> {
     fm.snoozed_until = toISO(due);
   });
 }
+/** Quick "we spoke": last_contact = today, clears any planned/snoozed next_contact. */
+export async function markContacted(app: App, p: Person): Promise<void> {
+  await app.fileManager.processFrontMatter(p.file, fm => {
+    fm.last_contact = toISO(today());
+    delete fm.next_contact; delete fm.snoozed_until;
+  });
+}
 export async function setPaused(app: App, p: Person, paused: boolean): Promise<void> {
   await app.fileManager.processFrontMatter(p.file, fm => { fm.status = paused ? "paused" : "active"; });
 }

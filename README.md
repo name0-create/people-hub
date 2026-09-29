@@ -84,6 +84,12 @@ next_meeting_note: Coffee at Java
 
 **Import contacts** — *Import contacts (.vcf / Google CSV)* (or the **Import** button on the People page). Reads vCard 2.1/3/4 (iPhone, Android, Google, Outlook) and Google Contacts / Google Workspace CSV. Detects duplicates by name / email / phone, previews, then creates one note per contact in your People folder. Imported people get `last_contact: today` and `frequency: quarterly`, so they don't flood your reach-out list.
 
+## v0.3 — inspired by [obsidian-personal-crm](https://github.com/xuvi7/obsidian-personal-crm)
+
+**Last contact from your notes** — a `[[Person]]` link in a dated note (daily note, or any note with a `date` frontmatter field) counts as an interaction, so `last_contact` no longer needs manual entry. Ignored: links in unchecked/cancelled to-dos (`- [ ]`), block quotes, embeds (`![[…]]`), code, and the person's own note. A completed `- [x]` counts. Effective last contact = most recent of the note mention and `last_contact`. A `next_contact` on or before the last contact is treated as used up. Only Obsidian's metadata cache is read, never the disk. Settings → *Last contact from your notes* shows how many people it found.
+
+**Reach-out queue** — command *Who should I reach out to?* (also a button on the Today tab and the People page). Walks through everyone overdue, most overdue first, one at a time: overdue days, last contact (and which note it came from), recent mentions, wants/interests/last talk, and an excerpt of their note (Meta Bind fields and empty template lines are filtered out). Actions: **Log talk** (L), **Contacted today** (T), **Snooze** 7d (S) / 1d / 3d / 30d, **Open note** (O), **Pause** (P), **Skip** (Space / →), **Back** (←).
+
 ## Roadmap
 - **v0.1 (this)**: index, sidebar (Today/People/Birthdays/Meetings), month calendar, log/snooze/pause, new person, code block, status bar, startup notice
 - **v0.2**: birthday → daily-note injection; `.ics` export; full-page calendar tab; edit-in-place next meeting; import from `.vcf`/Google Contacts CSV

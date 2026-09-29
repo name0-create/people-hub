@@ -19,6 +19,7 @@ export interface SocialLink { platform: string; label: string; handle: string; u
 export interface BirthDate { month: number; day: number; year: number | null; }
 export interface BirthdayInfo { date: Date; age: number | null; days: number; }
 
+export interface ContactRef { date: Date; path: string; }
 export interface MeetingInfo { date: Date; time: string; note: string; days: number; }
 
 export interface TalkLog {
@@ -42,6 +43,9 @@ export interface Person {
   anniversary: Date | null;
   nextMeeting: MeetingInfo | null;
   lastContact: Date | null;
+  lastContactSource: "note" | "manual" | "";
+  recentContacts: ContactRef[];   // newest first, from dated-note links
+  mentions: number;
   nextContact: Date | null;
   frequency: string;
   sinceContact: number | null;
@@ -83,6 +87,8 @@ export interface PluginSettings {
   dailyNoteFormat: string;
   icsPath: string;
   icsIncludeMeetings: boolean;
+  deriveContactFromNotes: boolean;
+  journalDateField: string;
 }
 export const DEFAULT_SETTINGS: PluginSettings = {
   peopleFolder: "20 - PEOPLE",
@@ -104,5 +110,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   dailyNoteFolder: "",
   dailyNoteFormat: "",
   icsPath: "People Hub/people.ics",
-  icsIncludeMeetings: true
+  icsIncludeMeetings: true,
+  deriveContactFromNotes: true,
+  journalDateField: "date"
 };

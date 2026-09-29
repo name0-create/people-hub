@@ -1,5 +1,7 @@
 import { App, TFile } from "obsidian";
 import { addDays, diffDays, isLeapYear, nextBirthday, parseBirthdate, parseDate, parseMeeting, today } from "./dates";
+import { buildJournal, journalDate } from "./journal";
+import type { JournalEntry } from "./journal";
 import { parseSocials } from "./socials";
 import { CarnegieScores, CARNEGIE_LABELS, Person, PluginSettings, TalkLog, Tier, TIERS } from "./types";
 
@@ -80,6 +82,7 @@ function parseTalks(fm: FM): TalkLog[] {
 
 export class PersonIndex {
   private cache: Person[] | null = null;
+  private journal = new Map<string, JournalEntry>();
   constructor(private app: App, private getSettings: () => PluginSettings) {}
 
   invalidate() { this.cache = null; }
@@ -100,9 +103,17 @@ export class PersonIndex {
     return !!folder && file.path.startsWith(folder + "/");
   }
 
+  /** Is this a dated note whose [[links]] count as contact? */
+  isJournalFile(file: TFile): boolean {
+    const s = this.getSettings();
+    return s.deriveContactFromNotes && !!journalDate(this.app, s, file);
+  }
+
   private build(): Person[] {
     const out: Person[] = [];
     const t = today();
+    const s0 = this.getSettings();
+    this.journal = s0.deriveContactFromNotes ? buildJournal(this.app, s0, f => this.isPersonFile(f)) : new Map();
     for (const file of this.app.vault.getMarkdownFiles()) {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as FM | undefined;
       if (this.isPerson(file, fm)) out.push(this.parse(file, fm as FM, t));
@@ -123,8 +134,15 @@ export class PersonIndex {
     if (!TIERS.includes(tier)) tier = typePerson ? typeToTier(typePerson) : "extended";
 
     // Reach-out due date: uses next_contact if set, else last_contact + tier cadence
-    const lastContact = parseDate(pick(fm, ["last_contact", "last_contacted"]));
-    const nextContact = parseDate(pick(fm, ["next_contact", "next_encounter", "next_action_date"]));
+    const manualLast = parseDate(pick(fm, ["last_contact", "last_contacted"]));
+    const jr = this.journal.get(file.path);
+    const noteLast = jr?.recent[0]?.date ?? null;
+    // effective last contact = most recent of a dated-note mention and the manual field
+    const lastContact = noteLast && (!manualLast || noteLast.getTime() > manualLast.getTime()) ? noteLast : manualLast;
+    const lastContactSource: "note" | "manual" | "" = !lastContact ? "" : lastContact === noteLast ? "note" : "manual";
+    const rawNext = parseDate(pick(fm, ["next_contact", "next_encounter", "next_action_date"]));
+    // a planned/snoozed date that is not later than the last contact has been "used up"
+    const nextContact = rawNext && !(lastContact && rawNext.getTime() <= lastContact.getTime()) ? rawNext : null;
     const cadence = s.tierDays[tier];
     const dueDate = nextContact ?? (lastContact ? addDays(lastContact, cadence) : t);
     const dueIn = diffDays(t, dueDate);
@@ -149,7 +167,8 @@ export class PersonIndex {
       birthday: bd ? nextBirthday(bd, t) : null,
       anniversary: parseDate(fm.anniversary),
       nextMeeting: parseMeeting(fm.next_meeting, str(pick(fm, ["next_meeting_note", "next_meeting_topic"])), t),
-      lastContact,
+      lastContact, lastContactSource,
+      recentContacts: jr?.recent ?? [], mentions: jr?.total ?? 0,
       nextContact: nextContact ?? (lastContact ? addDays(lastContact, cadence) : null),
       frequency: str(fm.frequency),
       sinceContact: lastContact ? diffDays(lastContact, t) : null,

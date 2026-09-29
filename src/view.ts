@@ -83,6 +83,10 @@ export class PeopleView extends ItemView {
 
     // Reach out
     const r = idx.reachOut();
+    if (r.length) {
+      const go = body.createEl("button", { text: `▶ Start reach-out queue (${r.length})`, cls: ["mod-cta", "ph-q-start"] });
+      go.addEventListener("click", () => this.plugin.startQueue());
+    }
     this.section(body, "📞 Reach out", r.length,
       l => r.forEach(p => renderPersonRow(this.plugin, l, p, reachOutMeta(p), true)), "You're all caught up. 🎉");
 

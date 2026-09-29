@@ -55,6 +55,13 @@ export class PeoplePageView extends ItemView {
     titles.createEl("h1", { text: "People", cls: "ph-page-title" });
     titles.createDiv({ text: `${all.length} people in ${this.plugin.settings.peopleFolder}`, cls: "ph-page-sub" });
     const actions = head.createDiv({ cls: "ph-page-actions" });
+    const due = this.plugin.index.reachOut().length;
+    if (due) {
+      const q = actions.createEl("button", { cls: "ph-page-import" });
+      setIcon(q.createSpan({ cls: "ph-page-add-ico" }), "phone");
+      q.createSpan({ text: `Reach out (${due})` });
+      q.addEventListener("click", () => this.plugin.startQueue());
+    }
     const imp = actions.createEl("button", { cls: "ph-page-import" });
     setIcon(imp.createSpan({ cls: "ph-page-add-ico" }), "upload");
     imp.createSpan({ text: "Import" });

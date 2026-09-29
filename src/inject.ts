@@ -1,35 +1,11 @@
-import { App, moment, Notice, TFile } from "obsidian";
+import { Notice, TFile } from "obsidian";
+import { dailyNoteDate } from "./journal";
 import type PeopleHubPlugin from "./main";
 import { nextBirthday, today } from "./dates";
-import type { PluginSettings } from "./types";
 import { fmtShort, relDays } from "./ui";
 
 const START = "<!-- people-hub:birthdays -->";
 const END = "<!-- /people-hub:birthdays -->";
-
-/** Daily-note folder/format: plugin settings first, then Obsidian's core Daily Notes plugin, then defaults. */
-export function dailyConfig(app: App, s: PluginSettings): { folder: string; format: string } {
-  const core = (app as any).internalPlugins?.getPluginById?.("daily-notes")?.instance?.options ?? {};
-  return {
-    folder: String(s.dailyNoteFolder || core.folder || "").replace(/^\/+|\/+$/g, ""),
-    format: String(s.dailyNoteFormat || core.format || "YYYY-MM-DD")
-  };
-}
-
-/** The date a daily note represents, or null if the file isn't a daily note. */
-export function dailyNoteDate(app: App, s: PluginSettings, file: TFile): Date | null {
-  if (file.extension !== "md") return null;
-  const { folder, format } = dailyConfig(app, s);
-  let rel = file.path.replace(/\.md$/i, "");
-  if (folder) {
-    if (!rel.startsWith(folder + "/")) return null;
-    rel = rel.slice(folder.length + 1);
-  }
-  const m = moment(rel, format, true);
-  if (!m.isValid()) return null;
-  const d = m.toDate();
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
 
 export function buildBlock(plugin: PeopleHubPlugin, noteDate: Date): string {
   const s = plugin.settings;

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-people-hub",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "People tracking for Obsidian, stored entirely in Markdown.",
   "main": "main.js",
   "scripts": {
