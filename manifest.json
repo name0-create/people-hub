@@ -1,0 +1,9 @@
+{
+  "id": "people-hub",
+  "name": "People Hub",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Personal CRM inside your vault: birthdays, reach-out cadence, next meetings, socials and interaction logs. Everything lives in your Markdown notes.",
+  "author": "You",
+  "isDesktopOnly": false
+}
