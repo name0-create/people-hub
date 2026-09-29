@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import type PeopleHubPlugin from "./main";
-import { diffDays, today } from "./dates";
+import { diffDays, today, toISO } from "./dates";
+import { lunarInfo, westernSign } from "./zodiac";
 import { CARNEGIE_LABELS, Person, TIERS } from "./types";
 import { birthdayMeta, carnegieBar, reachOutMeta, relDays, renderPersonRow, renderSocials } from "./ui";
 
@@ -122,38 +123,104 @@ export class PeopleView extends ItemView {
 
   // ─── BIRTHDAYS ──────────────────────────────────────────────────────────────
   private renderBirthdays(body: HTMLElement) {
-    const idx = this.plugin.index, s = this.plugin.settings;
-    const nav = body.createDiv({ cls: "ph-calnav" });
-    const shift = (d: number) => { const dt = new Date(this.calYear, this.calMonth + d, 1); this.calYear = dt.getFullYear(); this.calMonth = dt.getMonth(); this.render(true); };
-    nav.createEl("button", { text: "‹", cls: "ph-btn" }).addEventListener("click", () => shift(-1));
-    nav.createSpan({ text: new Date(this.calYear, this.calMonth, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }), cls: "ph-calttl" });
-    nav.createEl("button", { text: "›", cls: "ph-btn" }).addEventListener("click", () => shift(1));
-    nav.createEl("button", { text: "Today", cls: "ph-btn" }).addEventListener("click", () => { const n = today(); this.calYear = n.getFullYear(); this.calMonth = n.getMonth(); this.render(true); });
+    const idx = this.plugin.index;
+    const withBd = idx.all().filter(p => p.birthday && !["archived", "inactive"].includes(p.status));
+    const upcoming = [...withBd].sort((a, b) => a.birthday!.days - b.birthday!.days);
 
+    // Stats
+    const stats = body.createDiv({ cls: "ph-bstats" });
+    const stat = (n: number, label: string, accent = false) => {
+      const c = stats.createDiv({ cls: "ph-bstat" });
+      c.createDiv({ text: String(n), cls: ["ph-bstat-n", accent && n > 0 ? "is-accent" : ""].filter(Boolean) });
+      c.createDiv({ text: label, cls: "ph-bstat-l" });
+    };
+    stat(withBd.length, "Total");
+    stat(upcoming.filter(p => p.birthday!.days === 0).length, "Today", true);
+    stat(upcoming.filter(p => p.birthday!.days <= 7).length, "7d");
+    stat(upcoming.filter(p => p.birthday!.days <= 30).length, "30d");
+
+    // Lists
+    const todayList = upcoming.filter(p => p.birthday!.days === 0);
+    const next30 = upcoming.filter(p => p.birthday!.days > 0 && p.birthday!.days <= 30);
+    const later = upcoming.filter(p => p.birthday!.days > 30);
+    this.birthdayGroup(body, "🎉", "Today", todayList);
+    this.birthdayGroup(body, "📅", "Next 30 Days", next30);
+    this.birthdayGroup(body, "🔮", "Later Birthdays", later);
+    if (!withBd.length) body.createDiv({ text: "No birthdays yet. Add `birthday: YYYY-MM-DD` to a person's frontmatter.", cls: "ph-empty" });
+
+    // Calendar
+    const s = this.plugin.settings;
+    const head = body.createDiv({ cls: "ph-calhead" });
+    head.createEl("h3", { text: "📆 Birthday Calendar", cls: "ph-calhead-t" });
+    const nav = head.createDiv({ cls: "ph-calbtns" });
+    const shift = (d: number) => { const dt = new Date(this.calYear, this.calMonth + d, 1); this.calYear = dt.getFullYear(); this.calMonth = dt.getMonth(); this.render(true); };
+    nav.createEl("button", { text: "◀ Prev", cls: "ph-btn" }).addEventListener("click", () => shift(-1));
+    nav.createEl("button", { text: "Today", cls: "ph-btn" }).addEventListener("click", () => { const n = today(); this.calYear = n.getFullYear(); this.calMonth = n.getMonth(); this.render(true); });
+    nav.createEl("button", { text: "Next ▶", cls: "ph-btn" }).addEventListener("click", () => shift(1));
+
+    this.renderMonth(body, this.calYear, this.calMonth);
+    const nx = new Date(this.calYear, this.calMonth + 1, 1);
+    this.renderMonth(body, nx.getFullYear(), nx.getMonth());
+
+    const miss = idx.missingBirthdays();
+    this.section(body, "No birthday on file", miss.length, l => miss.forEach(p => renderPersonRow(this.plugin, l, p, p.typePerson, false)), "Everyone has one. 👏");
+  }
+
+  private birthdayGroup(body: HTMLElement, icon: string, title: string, people: Person[]) {
+    if (!people.length) return;
+    body.createEl("h4", { text: `${icon} ${title}`, cls: "ph-bgroup" });
+    for (const p of people) this.birthdayCard(body, p);
+  }
+
+  private birthdayCard(parent: HTMLElement, p: Person) {
+    const b = p.birthday!, bd = p.birthdate!;
+    const card = parent.createDiv({ cls: "ph-bcard" });
+    const nm = card.createEl("a", { text: p.name, cls: "ph-bcard-name" });
+    nm.addEventListener("click", e => { e.preventDefault(); this.plugin.openPerson(p, e.ctrlKey || e.metaKey); });
+
+    const lunar = lunarInfo(new Date(bd.year ?? b.date.getFullYear(), bd.month - 1, bd.day));
+    const tags = [lunar ? lunar.animal : "", westernSign(bd.month, bd.day), lunar ? lunar.label : ""].filter(Boolean);
+    if (tags.length) card.createDiv({ text: tags.join(" · "), cls: "ph-bcard-tags" });
+
+    const dates = card.createDiv({ cls: "ph-bcard-dates" });
+    if (bd.year) dates.createSpan({ text: `Birthday: ${bd.year}-${String(bd.month).padStart(2, "0")}-${String(bd.day).padStart(2, "0")}` });
+    dates.createSpan({ text: `Next: ${toISO(b.date)}` });
+
+    const foot = card.createDiv({ cls: "ph-bcard-foot" });
+    foot.createSpan({ text: b.days === 0 ? "🎉" : `${b.days}d`, cls: ["ph-bcard-days", b.days <= 7 ? "is-soon" : ""].filter(Boolean) });
+    if (b.age !== null) foot.createSpan({ text: `${b.age} years old`, cls: "ph-bcard-age" });
+  }
+
+  private renderMonth(body: HTMLElement, year: number, month0: number) {
+    const s = this.plugin.settings;
+    body.createDiv({ text: `${year}-${String(month0 + 1).padStart(2, "0")}`, cls: "ph-monthttl" });
     const grid = body.createDiv({ cls: "ph-cal" });
-    const dayNames = ["S","M","T","W","T","F","S"];
-    for (let i = 0; i < 7; i++) grid.createDiv({ text: dayNames[(i + s.weekStartsOn) % 7], cls: "ph-calhd" });
-    const first = new Date(this.calYear, this.calMonth, 1);
+    const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    for (let i = 0; i < 7; i++) grid.createDiv({ text: names[(i + s.weekStartsOn) % 7], cls: "ph-calhd" });
+    const first = new Date(year, month0, 1);
     const offset = (first.getDay() - s.weekStartsOn + 7) % 7;
-    const dim = new Date(this.calYear, this.calMonth + 1, 0).getDate();
+    const dim = new Date(year, month0 + 1, 0).getDate();
     const total = Math.ceil((offset + dim) / 7) * 7;
-    const map = idx.birthdaysInMonth(this.calYear, this.calMonth);
+    const map = this.plugin.index.birthdaysInMonth(year, month0);
     const t = today();
     for (let i = 0; i < total; i++) {
       const day = i - offset + 1;
       const cell = grid.createDiv({ cls: "ph-cell" });
-      if (day < 1 || day > dim) { cell.addClass("is-out"); continue; }
-      if (t.getFullYear() === this.calYear && t.getMonth() === this.calMonth && t.getDate() === day) cell.addClass("is-today");
-      cell.createDiv({ text: String(day), cls: "ph-daynum" });
-      for (const p of map.get(day) ?? []) {
-        const chip = cell.createEl("a", { text: p.name.split(" ")[0], cls: "ph-chip", attr: { "aria-label": p.name } });
+      if (day < 1 || day > dim) {
+        cell.addClass("is-out");
+        cell.createDiv({ text: String(new Date(year, month0, day).getDate()), cls: "ph-daynum" });
+        continue;
+      }
+      const people = map.get(day) ?? [];
+      if (t.getFullYear() === year && t.getMonth() === month0 && t.getDate() === day) cell.addClass("is-today");
+      cell.createDiv({ text: String(day), cls: ["ph-daynum", people.length ? "has-bd" : ""].filter(Boolean) });
+      for (const p of people) {
+        const chip = cell.createEl("a", { cls: "ph-chip", attr: { "aria-label": p.name } });
+        chip.createSpan({ text: "🎂", cls: "ph-chip-ico" });
+        chip.createSpan({ text: p.name });
         chip.addEventListener("click", e => { e.preventDefault(); this.plugin.openPerson(p, e.ctrlKey || e.metaKey); });
       }
     }
-    const up = idx.upcomingBirthdays(60);
-    this.section(body, "Next 60 days", up.length, l => up.forEach(p => renderPersonRow(this.plugin, l, p, birthdayMeta(p), false)), "None.");
-    const miss = idx.missingBirthdays();
-    this.section(body, "No birthday on file", miss.length, l => miss.forEach(p => renderPersonRow(this.plugin, l, p, p.typePerson, false)), "Everyone has one. 👏");
   }
 
   // ─── CARNEGIE ───────────────────────────────────────────────────────────────

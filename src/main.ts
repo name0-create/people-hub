@@ -6,6 +6,7 @@ import { PeopleSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, Person, PluginSettings } from "./types";
 import { birthdayMeta, reachOutMeta } from "./ui";
 import { PeopleView, Tab, VIEW_TYPE } from "./view";
+import css from "../styles.css";
 
 export default class PeopleHubPlugin extends Plugin {
   settings!: PluginSettings;
@@ -13,7 +14,12 @@ export default class PeopleHubPlugin extends Plugin {
   pendingTab: Tab | null = null;
   private statusEl: HTMLElement | null = null;
 
+  private styleEl: HTMLStyleElement | null = null;
+
   async onload() {
+    // Inject CSS from the bundle so styling never depends on styles.css being copied next to main.js
+    this.styleEl = document.head.createEl("style", { attr: { id: "people-hub-css" } });
+    this.styleEl.textContent = css;
     await this.loadSettings();
     this.index = new PersonIndex(this.app, () => this.settings);
 
@@ -99,7 +105,7 @@ export default class PeopleHubPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => { this.refresh(); if (this.settings.startupNotice) this.startupNotice(); });
   }
 
-  onunload() { this.app.workspace.detachLeavesOfType(VIEW_TYPE); }
+  onunload() { this.styleEl?.remove(); this.app.workspace.detachLeavesOfType(VIEW_TYPE); }
 
   async loadSettings() {
     const d = (await this.loadData()) ?? {};
