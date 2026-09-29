@@ -2,17 +2,61 @@ import { App, normalizePath, TFile } from "obsidian";
 import { addDays, parseDate, today, toISO } from "./dates";
 import { Person, PluginSettings, Tier } from "./types";
 
-export const LOG_TYPES = ["call", "whatsapp", "message", "email", "coffee", "lunch", "walk", "physical", "virtual"];
-const IN_PERSON = new Set(["coffee", "lunch", "walk", "physical"]);
-const ICON: Record<string, string> = { call: "📞", whatsapp: "💬", message: "💬", email: "✉️", coffee: "☕", lunch: "🍽️", walk: "🚶", physical: "🤝", virtual: "💻" };
+export const LOG_TYPES = ["call", "whatsapp", "coffee", "lunch", "walk", "home-1on1", "video", "message", "email"];
 
-export interface LogEntry { date: string; type: string; place: string; summary: string; nextDate: string; nextPurpose: string; }
+export interface TalkEntry {
+  date: string; type: string; where: string; note: string;
+  learned: string; next: string; presence: number; energy: number;
+  c2_used: boolean; c4_used: boolean; c7_used: boolean;
+}
 
-/** Append `line` to the end of the section under `heading`, creating the section if missing. */
-export function appendUnderHeading(data: string, heading: string, line: string): string {
+const TYPE_ICON: Record<string, string> = {
+  call: "📞", whatsapp: "💬", coffee: "☕", lunch: "🍽️",
+  walk: "🚶", "home-1on1": "🏠", video: "💻", message: "💬", email: "✉️"
+};
+const IN_PERSON = new Set(["coffee", "lunch", "walk", "home-1on1"]);
+
+/** Rotate talk1…talk5 fields: shift 1→2→3→4→5, write fresh into talk1. */
+export async function logTalk(app: App, s: PluginSettings, p: Person, e: TalkEntry): Promise<void> {
+  await app.fileManager.processFrontMatter(p.file, fm => {
+    // rotate
+    for (let i = 5; i > 1; i--) {
+      for (const k of ["date", "where", "note", "learned", "next", "presence", "energy"]) {
+        fm[`talk${i}_${k}`] = fm[`talk${i - 1}_${k}`] ?? null;
+      }
+    }
+    // write talk1
+    fm.talk1_date = e.date;
+    fm.talk1_where = e.where;
+    fm.talk1_note = e.note;
+    fm.talk1_learned = e.learned;
+    fm.talk1_next = e.next;
+    fm.talk1_presence = e.presence;
+    fm.talk1_energy = e.energy;
+
+    // update tracking fields
+    fm.last_contact = e.date;
+    if (IN_PERSON.has(e.type)) fm.times_met = (Number(fm.times_met) || 0) + 1;
+  });
+
+  // also append a brief bullet under the log heading so it's readable
+  const icon = TYPE_ICON[e.type] ?? "•";
+  const cUsed = [e.c2_used ? "C2" : "", e.c4_used ? "C4" : "", e.c7_used ? "C7" : ""].filter(Boolean);
+  let line = `- ${e.date} ${icon}`;
+  if (e.where) line += ` @ ${e.where}`;
+  if (e.note) line += ` — ${e.note.replace(/\n+/g, " ")}`;
+  if (e.learned) line += ` · learned: ${e.learned}`;
+  if (cUsed.length) line += ` · Carnegie: ${cUsed.join("+")}`;
+  if (e.presence) line += ` · presence ${e.presence}/5`;
+  if (e.next) line += ` → ${e.next}`;
+
+  await app.vault.process(p.file, data => appendUnderHeading(data, "## Talks Log", line));
+}
+
+function appendUnderHeading(data: string, heading: string, line: string): string {
   const lines = data.split("\n");
   const level = heading.match(/^#+/)?.[0].length ?? 2;
-  const idx = lines.findIndex(l => l.trim() === heading.trim());
+  const idx = lines.findIndex(l => l.trim().startsWith(heading.trim()));
   if (idx === -1) return data.replace(/\s*$/, "") + `\n\n${heading}\n\n${line}\n`;
   let end = lines.length;
   for (let i = idx + 1; i < lines.length; i++) {
@@ -26,37 +70,22 @@ export function appendUnderHeading(data: string, heading: string, line: string):
   return lines.join("\n");
 }
 
-export async function logInteraction(app: App, s: PluginSettings, p: Person, e: LogEntry): Promise<void> {
-  await app.fileManager.processFrontMatter(p.file, fm => {
-    const prev = parseDate(fm.last_contacted);
-    const d = parseDate(e.date);
-    if (!prev || (d && d.getTime() >= prev.getTime())) fm.last_contacted = e.date;
-    if (IN_PERSON.has(e.type)) fm.times_met = (Number(fm.times_met) || 0) + 1;
-    delete fm.snoozed_until;
-    if (e.nextDate) {
-      fm.next_encounter = e.nextDate;
-      if (e.nextPurpose) fm.next_encounter_purpose = e.nextPurpose;
-    } else {
-      const ne = parseDate(fm.next_encounter);
-      if (ne && d && ne.getTime() <= d.getTime()) fm.next_encounter = null;  // meeting happened
-    }
-  });
-  let line = `- ${e.date} · ${ICON[e.type] ?? "•"} ${e.type}`;
-  if (e.place) line += ` @ ${e.place}`;
-  if (e.summary) line += ` — ${e.summary.replace(/\n+/g, " ")}`;
-  if (e.nextDate) line += ` → next: ${e.nextDate}${e.nextPurpose ? " (" + e.nextPurpose + ")" : ""}`;
-  await app.vault.process(p.file, data => appendUnderHeading(data, s.logHeading, line));
-}
-
 export async function snooze(app: App, p: Person, days: number): Promise<void> {
-  await app.fileManager.processFrontMatter(p.file, fm => { fm.snoozed_until = toISO(addDays(today(), days)); });
+  await app.fileManager.processFrontMatter(p.file, fm => {
+    const due = addDays(today(), days);
+    fm.next_contact = toISO(due);
+    fm.snoozed_until = toISO(due);
+  });
 }
 export async function setPaused(app: App, p: Person, paused: boolean): Promise<void> {
-  await app.fileManager.processFrontMatter(p.file, fm => { fm["prm-paused"] = paused; });
+  await app.fileManager.processFrontMatter(p.file, fm => { fm.status = paused ? "paused" : "active"; });
 }
 
-// ---------- create person ----------
-export interface NewPersonOpts { name: string; tier: Tier; birthdate: string; phone: string; email: string; company: string; }
+// ─── create person ────────────────────────────────────────────────────────────
+export interface NewPersonOpts {
+  name: string; typePerson: string; tier: Tier;
+  phone: string; email: string; ig: string; linkedin: string; frequency: string;
+}
 
 async function ensureFolder(app: App, folder: string) {
   if (!folder || folder === "/") return;
@@ -67,46 +96,6 @@ async function ensureFolder(app: App, folder: string) {
   }
 }
 
-async function buildBody(app: App, s: PluginSettings, name: string): Promise<string> {
-  if (s.bodyTemplate) {
-    const f = app.vault.getAbstractFileByPath(normalizePath(s.bodyTemplate));
-    if (f instanceof TFile) {
-      const raw = await app.vault.read(f);
-      return raw.replace(/^---\n[\s\S]*?\n---\n?/, "")
-        .replace(/\{\{\s*(title|name)\s*\}\}/g, name)
-        .replace(/\{\{\s*date\s*\}\}/g, toISO(today()));
-    }
-  }
-  return `# ${name}
-
-## 🤝 Relationship
-**Why I value this relationship**
-- 
-
-**How I can help**
-- 
-
-**Things to ask next time**
-- 
-
-**Open loops**
-- 
-
-## 🔍 Homework (before we meet)
-- Background:
-- Working on now:
-- Struggles / goals:
-- Topics to avoid:
-
-## 🧾 Promises
-- I promised:
-- They promised:
-
-${s.logHeading}
-
-`;
-}
-
 export async function createPerson(app: App, s: PluginSettings, o: NewPersonOpts): Promise<TFile> {
   const folder = s.peopleFolder.replace(/\/$/, "");
   await ensureFolder(app, folder);
@@ -115,49 +104,68 @@ export async function createPerson(app: App, s: PluginSettings, o: NewPersonOpts
   let path = normalizePath(`${prefix}${base}.md`);
   let i = 2;
   while (app.vault.getAbstractFileByPath(path)) path = normalizePath(`${prefix}${base} ${i++}.md`);
+  const now = today();
+  const t = toISO(now);
 
-  const file = await app.vault.create(path, await buildBody(app, s, o.name));
+  const body = `# ${o.name}
+
+> Carnegie: Don't criticize, give honest appreciation, become genuinely interested, remember name, listen 80%, talk in their interests, make feel important, avoid arguments, admit quickly.
+
+## 01 - Who - Quick ID
+- **Type:** ${o.typePerson}
+- **Phone:** ${o.phone || "—"} · **Email:** ${o.email || "—"}
+- **IG:** ${o.ig || "—"} · **LinkedIn:** ${o.linkedin || "—"}
+
+## 02 - Carnegie Scores
+*(Fill after first talk — see frontmatter c1_score … c9_score)*
+
+## 03 - Relationship Health
+- **Frequency:** ${o.frequency || "weekly"}
+- **Last contact:** ${t}
+- **Next contact:** ${t}
+
+## 04 - What to Remember
+- **Wants:**
+- **Fears:**
+- **Interests:**
+- **Their Story:**
+
+## Talks Log
+
+`;
+
+  const file = await app.vault.create(path, body);
   const [first, ...rest] = o.name.trim().split(/\s+/);
-  const now = new Date();
   await app.fileManager.processFrontMatter(file, fm => {
     Object.assign(fm, {
-      id: `PER-${Date.now().toString(36).toUpperCase()}`,
-      id_prefix: "PER",
-      created: `${toISO(now)} ${now.toTimeString().slice(0, 8)}`,
+      id: `PERSON-${Date.now().toString().slice(-10)}`,
       type: s.personType,
-      title: o.name,
-      display_name: o.name,
-      aliases: [],
-      first_name: first ?? "",
-      last_name: rest.join(" "),
-      nickname: "",
-      photo: "",
-      phone: o.phone,
-      email: o.email,
-      instagram: "", linkedin: "", x_twitter: "", youtube: "",
-      company: o.company,
-      role: "",
-      category: [],
-      "prm-tier": o.tier,
-      "prm-paused": false,
       status: "active",
-      frequency: null,
-      birthdate: o.birthdate,
-      first_encounter_date: toISO(now),
-      last_contacted: toISO(now),
-      next_encounter: null,
-      next_encounter_place: "",
-      next_encounter_purpose: "",
-      times_met: 1,
-      relationship_status: "new",
-      importance: "medium",
-      tags: ["type/person", "area/people"]
+      created: t,
+      name: o.name,
+      full_name: o.name,
+      type_person: o.typePerson,
+      also_is: "",
+      where_met: "",
+      met_date: t,
+      met_context: "",
+      phone: o.phone, email: o.email,
+      ig: o.ig, linkedin: o.linkedin, youtube: "", x_twitter: "",
+      location: "",
+      birthday: "", anniversary: "",
+      frequency: o.frequency || (o.tier === "inner" ? "daily" : o.tier === "close" ? "weekly" : o.tier === "extended" ? "monthly" : "quarterly"),
+      next_contact: t, last_contact: t,
+      health_score: 3, trust_score: 3, carnegie_avg: 3,
+      skill_code: "S3",
+      c1_score: 0, c2_score: 0, c3_score: 0, c4_score: 0, c5_score: 0,
+      c6_score: 0, c7_score: 0, c8_score: 0, c9_score: 0,
+      promises_made: 0, promises_kept: 0,
+      tags: ["type/person", "status/active"]
     });
   });
   return file;
 }
 
-/** Optional: run the user's Templater template instead of the built-in generator. */
 export async function createWithTemplater(app: App, s: PluginSettings): Promise<boolean> {
   const tp = (app as any).plugins?.plugins?.["templater-obsidian"];
   const tpl = app.vault.getAbstractFileByPath(normalizePath(s.templaterTemplate));
@@ -166,8 +174,5 @@ export async function createWithTemplater(app: App, s: PluginSettings): Promise<
     const folder = app.vault.getAbstractFileByPath(normalizePath(s.peopleFolder));
     await tp.templater.create_new_note_from_template(tpl, folder ?? undefined, undefined, true);
     return true;
-  } catch (e) {
-    console.error("People Hub: Templater failed", e);
-    return false;
-  }
+  } catch (e) { console.error("People Hub: Templater failed", e); return false; }
 }

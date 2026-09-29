@@ -1,11 +1,10 @@
 import { App, TFile } from "obsidian";
-import { addDays, diffDays, nextBirthday, occurrence, parseBirthdate, parseDate, today } from "./dates";
+import { addDays, diffDays, nextBirthday, parseBirthdate, parseDate, today } from "./dates";
 import { parseSocials } from "./socials";
-import { Person, PluginSettings, Tier, TIERS } from "./types";
+import { CarnegieScores, CARNEGIE_LABELS, Person, PluginSettings, TalkLog, Tier, TIERS } from "./types";
 
 type FM = Record<string, any>;
 
-/** First non-empty value among alias keys. This is what makes messy templates work. */
 function pick(fm: FM, keys: string[]): unknown {
   for (const k of keys) {
     const v = fm[k];
@@ -20,40 +19,71 @@ function str(v: unknown): string {
   if (Array.isArray(v)) return v.map(str).filter(Boolean).join(", ");
   if (typeof v === "object") return "";
   const s = String(v).trim();
-  return s.includes("{{") || s.includes("<%") ? "" : s;   // ignore unresolved placeholders
+  return s.includes("{{") || s.includes("<%") || s === "null" ? "" : s;
 }
-const truthy = (v: unknown) => v === true || String(v).toLowerCase() === "true";
-
-function parseCadence(v: unknown): number | null {
-  if (typeof v === "number" && v > 0) return v;
-  const s = str(v).toLowerCase();
-  if (!s) return null;
-  const words: Record<string, number> = { daily: 1, weekly: 7, biweekly: 14, fortnightly: 14, monthly: 30, quarterly: 90, yearly: 365 };
-  if (words[s]) return words[s];
-  const m = s.match(/^(\d+)\s*(d|w|m)?/);
-  if (!m) return null;
-  const n = +m[1];
-  return n > 0 ? n * (m[2] === "w" ? 7 : m[2] === "m" ? 30 : 1) : null;
+function num(v: unknown, def = 0): number {
+  const n = Number(v); return isNaN(n) ? def : n;
 }
 
 const INACTIVE = new Set(["archived", "inactive", "lost", "deceased", "done"]);
+const TYPE_TIER: Record<string, Tier> = {
+  family: "inner", girlfriend: "inner", partner: "inner",
+  "close-friend": "close", friend: "close", mentor: "close",
+  prospect: "close", client: "close", coworker: "close", "co-worker": "close",
+  "school-mate": "extended", "high-school-mate": "extended",
+  random: "professional", author: "professional", politician: "professional",
+  "podcast-host": "professional", "youtube-creator": "professional",
+  "tv-host": "professional", "book-author": "professional",
+};
+
+function typeToTier(typePerson: string): Tier {
+  const first = typePerson.split(/[+,/]/)[0].trim().toLowerCase().replace(/\s+/g, "-");
+  return TYPE_TIER[first] ?? "extended";
+}
+
+function carnegieScores(fm: FM): CarnegieScores {
+  const scores = [1,2,3,4,5,6,7,8,9].map(i => Math.min(5, Math.max(0, num(fm[`c${i}_score`]))));
+  const avg = scores.reduce((a, b) => a + b, 0) / 9;
+  let minIdx = 0;
+  for (let i = 1; i < scores.length; i++) if (scores[i] < scores[minIdx]) minIdx = i;
+  const wKey = `c${minIdx + 1}`;
+  return {
+    c1: scores[0], c2: scores[1], c3: scores[2], c4: scores[3], c5: scores[4],
+    c6: scores[5], c7: scores[6], c8: scores[7], c9: scores[8],
+    avg: Math.round(avg * 10) / 10,
+    weakest: wKey,
+    weakestLabel: CARNEGIE_LABELS[wKey]
+  };
+}
+
+function parseTalks(fm: FM): TalkLog[] {
+  const out: TalkLog[] = [];
+  for (let i = 1; i <= 5; i++) {
+    const d = parseDate(fm[`talk${i}_date`]);
+    const note = str(fm[`talk${i}_note`]);
+    if (!d && !note) continue;
+    out.push({
+      date: d, where: str(fm[`talk${i}_where`]),
+      note, learned: str(fm[`talk${i}_learned`]),
+      next: str(fm[`talk${i}_next`]),
+      presence: num(fm[`talk${i}_presence`], 0),
+      energy: num(fm[`talk${i}_energy`], 0)
+    });
+  }
+  return out;
+}
 
 export class PersonIndex {
   private cache: Person[] | null = null;
   constructor(private app: App, private getSettings: () => PluginSettings) {}
 
   invalidate() { this.cache = null; }
-
-  all(): Person[] {
-    if (!this.cache) this.cache = this.build();
-    return this.cache;
-  }
+  all(): Person[] { if (!this.cache) this.cache = this.build(); return this.cache; }
 
   isPersonFile(file: TFile): boolean {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as FM | undefined;
     return this.isPerson(file, fm);
   }
-
   private isPerson(file: TFile, fm: FM | undefined): boolean {
     const s = this.getSettings();
     if (!fm) return false;
@@ -77,53 +107,63 @@ export class PersonIndex {
 
   private parse(file: TFile, fm: FM, t: Date): Person {
     const s = this.getSettings();
-    const name = str(pick(fm, ["display_name", "full-name", "full_name", "name", "title"])) || file.basename;
-
-    let tier = str(pick(fm, ["prm-tier", "circle", "tier"])).toLowerCase() as Tier;
-    if (!TIERS.includes(tier)) tier = "extended";
-
+    const name = str(pick(fm, ["name", "display_name", "full_name", "title"])) || file.basename;
+    const typePerson = str(pick(fm, ["type_person", "type_person_primary", "category"]));
     const status = str(fm.status).toLowerCase() || "active";
-    const paused = truthy(fm["prm-paused"]);
-    const active = !paused && !INACTIVE.has(status);
+    const paused = status === "paused" || status === "archived";
+    const active = !INACTIVE.has(status);
 
-    const cadenceDays = parseCadence(pick(fm, ["frequency", "cadence"])) ?? s.tierDays[tier];
-    const lastContacted = parseDate(pick(fm, ["last_contacted", "last_contact"]));
-    const first = parseDate(pick(fm, ["first_encounter_date", "first_encounter"]));
-    const base = lastContacted ?? first;
-    let dueDate = base ? addDays(base, cadenceDays) : t;
-    const snooze = parseDate(fm.snoozed_until);
-    if (snooze && snooze.getTime() > dueDate.getTime()) dueDate = snooze;
+    // Derive tier from type_person if no explicit tier
+    let tier = str(pick(fm, ["prm-tier", "circle", "tier"])).toLowerCase() as Tier;
+    if (!TIERS.includes(tier)) tier = typePerson ? typeToTier(typePerson) : "extended";
+
+    // Reach-out due date: uses next_contact if set, else last_contact + tier cadence
+    const lastContact = parseDate(pick(fm, ["last_contact", "last_contacted"]));
+    const nextContact = parseDate(pick(fm, ["next_contact", "next_encounter", "next_action_date"]));
+    const cadence = s.tierDays[tier];
+    const dueDate = nextContact ?? (lastContact ? addDays(lastContact, cadence) : t);
     const dueIn = diffDays(t, dueDate);
 
-    const nextEncounter = parseDate(pick(fm, ["next_encounter", "next_meeting"]));
-    const hasFutureMeeting = !!nextEncounter && diffDays(t, nextEncounter) >= 0;
-
+    const bd = parseBirthdate(pick(fm, ["birthday", "birthdate", "birth_date", "dob"]));
     const phone = str(fm.phone);
-    const bd = parseBirthdate(pick(fm, ["birthdate", "birthday", "birth_date", "dob"]));
+    const made = num(fm.promises_made); const kept = num(fm.promises_kept);
+
+    const carnegie = carnegieScores(fm);
 
     return {
-      file, name, tier, active, paused, status,
-      category: str(fm.category),
-      importance: str(fm.importance),
-      company: str(fm.company),
+      file, name,
+      fullName: str(fm.full_name),
+      typePerson, alsoIs: str(fm.also_is),
+      tier, active, paused, status,
+      company: str(pick(fm, ["company", "biz"])),
       role: str(pick(fm, ["role", "job_title"])),
-      phone,
-      email: str(fm.email),
-      photo: str(fm.photo),
+      phone, email: str(fm.email),
       socials: parseSocials(fm, phone),
+      location: str(fm.location),
       birthdate: bd,
       birthday: bd ? nextBirthday(bd, t) : null,
-      lastContacted,
-      sinceContact: lastContacted ? diffDays(lastContacted, t) : null,
-      cadenceDays, dueDate, dueIn,
-      needsReachOut: active && dueIn <= 0 && !hasFutureMeeting,
-      nextEncounter,
-      nextPlace: str(fm.next_encounter_place),
-      nextPurpose: str(fm.next_encounter_purpose)
+      anniversary: parseDate(fm.anniversary),
+      lastContact,
+      nextContact: nextContact ?? (lastContact ? addDays(lastContact, cadence) : null),
+      frequency: str(fm.frequency),
+      sinceContact: lastContact ? diffDays(lastContact, t) : null,
+      dueIn,
+      needsReachOut: active && !paused && dueIn <= 0,
+      healthScore: num(fm.health_score),
+      trustScore: num(fm.trust_score),
+      carnegie,
+      promisesMade: made, promisesKept: kept,
+      promiseRatio: made > 0 ? Math.round((kept / made) * 100) : null,
+      wants: str(fm.wants), fears: str(fm.fears), interests: str(fm.interests),
+      theirStory: str(pick(fm, ["their_story", "story"])),
+      skillCode: str(fm.skill_code),
+      talks: parseTalks(fm),
+      nextAction: str(pick(fm, ["next_action", "next_encounter_purpose"])),
+      photo: str(fm.photo)
     };
   }
 
-  // ---- queries ----
+  // ─── queries ───────────────────────────────────────────────────────────
   upcomingBirthdays(days: number): Person[] {
     return this.all()
       .filter(p => p.birthday && !INACTIVE.has(p.status) && p.birthday.days <= days)
@@ -133,8 +173,7 @@ export class PersonIndex {
     const map = new Map<number, Person[]>();
     for (const p of this.all()) {
       if (!p.birthdate || INACTIVE.has(p.status) || p.birthdate.month !== month0 + 1) continue;
-      const day = occurrence(p.birthdate, year).getDate();
-      map.set(day, [...(map.get(day) ?? []), p]);
+      map.set(p.birthdate.day, [...(map.get(p.birthdate.day) ?? []), p]);
     }
     return map;
   }
@@ -143,19 +182,18 @@ export class PersonIndex {
   }
   reachOut(): Person[] {
     const rank: Record<Tier, number> = { inner: 0, close: 1, extended: 2, professional: 3 };
-    return this.all().filter(p => p.needsReachOut)
+    return this.all()
+      .filter(p => p.needsReachOut)
       .sort((a, b) => a.dueIn - b.dueIn || rank[a.tier] - rank[b.tier]);
   }
-  meetings(days: number): Person[] {
-    const t = today();
+  carnegieAlert(threshold = 3): Person[] {
     return this.all()
-      .filter(p => p.nextEncounter && diffDays(t, p.nextEncounter) >= 0 && diffDays(t, p.nextEncounter) <= days)
-      .sort((a, b) => a.nextEncounter!.getTime() - b.nextEncounter!.getTime());
+      .filter(p => p.active && !p.paused && p.carnegie.avg > 0 && p.carnegie.avg < threshold)
+      .sort((a, b) => a.carnegie.avg - b.carnegie.avg);
   }
-  /** next_encounter is in the past and last_contacted hasn't caught up: probably needs logging */
-  unloggedMeetings(): Person[] {
-    const t = today();
-    return this.all().filter(p => p.nextEncounter && diffDays(t, p.nextEncounter) < 0 &&
-      (!p.lastContacted || p.lastContacted.getTime() < p.nextEncounter.getTime()));
+  promiseAlert(threshold = 70): Person[] {
+    return this.all()
+      .filter(p => p.active && p.promiseRatio !== null && p.promiseRatio < threshold)
+      .sort((a, b) => (a.promiseRatio ?? 0) - (b.promiseRatio ?? 0));
   }
 }
