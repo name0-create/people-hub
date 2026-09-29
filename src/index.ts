@@ -25,6 +25,11 @@ function num(v: unknown, def = 0): number {
   const n = Number(v); return isNaN(n) ? def : n;
 }
 
+function tagList(v: unknown): string[] {
+  const arr = Array.isArray(v) ? v : typeof v === "string" ? v.split(/[,\s]+/) : [];
+  return arr.map(x => String(x).trim().replace(/^#/, "")).filter(x => x && !x.includes("{{"));
+}
+
 const INACTIVE = new Set(["archived", "inactive", "lost", "deceased", "done"]);
 const TYPE_TIER: Record<string, Tier> = {
   family: "inner", girlfriend: "inner", partner: "inner",
@@ -159,7 +164,9 @@ export class PersonIndex {
       skillCode: str(fm.skill_code),
       talks: parseTalks(fm),
       nextAction: str(pick(fm, ["next_action", "next_encounter_purpose"])),
-      photo: str(fm.photo)
+      photo: str(fm.photo),
+      tags: tagList(fm.tags),
+      favorite: [fm.favorite, fm.favourite, fm.starred, fm.star].some(v => v === true || String(v).toLowerCase() === "true")
     };
   }
 

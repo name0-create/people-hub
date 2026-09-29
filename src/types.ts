@@ -54,6 +54,8 @@ export interface Person {
   talks: TalkLog[];
   nextAction: string;
   photo: string;
+  tags: string[];
+  favorite: boolean;
 }
 
 export interface PluginSettings {

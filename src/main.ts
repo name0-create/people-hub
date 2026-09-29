@@ -6,6 +6,7 @@ import { PeopleSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, Person, PluginSettings } from "./types";
 import { birthdayMeta, reachOutMeta } from "./ui";
 import { PeopleView, Tab, VIEW_TYPE } from "./view";
+import { PeoplePageView, PAGE_TYPE } from "./page";
 import css from "../styles.css";
 
 export default class PeopleHubPlugin extends Plugin {
@@ -24,10 +25,12 @@ export default class PeopleHubPlugin extends Plugin {
     this.index = new PersonIndex(this.app, () => this.settings);
 
     this.registerView(VIEW_TYPE, leaf => new PeopleView(leaf, this));
-    this.addRibbonIcon("users", "Open People Hub", () => this.activateView());
+    this.registerView(PAGE_TYPE, leaf => new PeoplePageView(leaf, this));
+    this.addRibbonIcon("users", "Open People", () => this.openPage());
     this.addSettingTab(new PeopleSettingTab(this.app, this));
 
-    this.addCommand({ id: "open-hub", name: "Open People Hub", callback: () => this.activateView() });
+    this.addCommand({ id: "open-hub", name: "Open People Hub", callback: () => this.openPage() });
+    this.addCommand({ id: "open-sidebar", name: "People Hub: Open sidebar", callback: () => this.activateView() });
     this.addCommand({ id: "open-today", name: "People Hub: Today's reach-out + birthdays", callback: () => this.activateView("today") });
     this.addCommand({ id: "open-birthdays", name: "People Hub: Birthday calendar", callback: () => this.activateView("birthdays") });
     this.addCommand({ id: "open-carnegie", name: "People Hub: Carnegie scores", callback: () => this.activateView("carnegie") });
@@ -105,7 +108,7 @@ export default class PeopleHubPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => { this.refresh(); if (this.settings.startupNotice) this.startupNotice(); });
   }
 
-  onunload() { this.styleEl?.remove(); this.app.workspace.detachLeavesOfType(VIEW_TYPE); }
+  onunload() { this.styleEl?.remove(); this.app.workspace.detachLeavesOfType(VIEW_TYPE); this.app.workspace.detachLeavesOfType(PAGE_TYPE); }
 
   async loadSettings() {
     const d = (await this.loadData()) ?? {};
@@ -133,6 +136,10 @@ export default class PeopleHubPlugin extends Plugin {
       const v = leaf.view;
       if (v instanceof PeopleView) v.render();
     }
+    for (const leaf of this.app.workspace.getLeavesOfType(PAGE_TYPE)) {
+      const v = leaf.view;
+      if (v instanceof PeoplePageView) v.render();
+    }
     if (notify) new Notice(`People Hub: ${this.index.all().length} people indexed`);
   }
 
@@ -145,6 +152,15 @@ export default class PeopleHubPlugin extends Plugin {
     if (due) parts.push(`📞 ${due} to reach out to`);
     if (lowC.length) parts.push(`⚠️ Carnegie < 3: ${lowC.map(p => p.name).slice(0, 3).join(", ")}`);
     if (parts.length) new Notice(parts.join("\n"), 8000);
+  }
+
+  async openPage() {
+    let leaf = this.app.workspace.getLeavesOfType(PAGE_TYPE)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getLeaf("tab");
+      await leaf.setViewState({ type: PAGE_TYPE, active: true });
+    }
+    this.app.workspace.revealLeaf(leaf);
   }
 
   async activateView(tab?: Tab) {
