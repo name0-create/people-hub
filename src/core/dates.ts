@@ -1,4 +1,4 @@
-import type { BirthDate, BirthdayInfo, MeetingInfo } from "./types";
+import type { BirthDate, BirthdayInfo } from "../models/person";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -69,15 +69,3 @@ export function nextBirthday(bd: BirthDate, from: Date): BirthdayInfo {
     days: diffDays(from, d)
   };
 }
-
-/** next_meeting: YYYY-MM-DD, or YYYY-MM-DDTHH:MM / "YYYY-MM-DD HH:MM" */
-export function parseMeeting(v: unknown, note: string, from: Date): MeetingInfo | null {
-  if (v === null || v === undefined) return null;
-  const m = String(v).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2}))?/);
-  if (!m) return null;
-  const date = mk(+m[1], +m[2], +m[3]);
-  if (!date) return null;
-  const time = m[4] !== undefined ? `${pad(+m[4])}:${m[5]}` : "";
-  return { date, time, note, days: diffDays(from, date) };
-}
-export const isLeapYear = isLeap;

@@ -13,14 +13,13 @@ const ctx = await esbuild.context({
     "@codemirror/state", "@codemirror/view",
     "@lezer/common", "@lezer/highlight", "@lezer/lr"
   ],
-  loader: { ".css": "text" },
   format: "cjs",
   target: "es2020",
   logLevel: "info",
   sourcemap: prod ? false : "inline",
   treeShaking: true,
   outfile: "main.js",
-  minify: prod
+  minify: prod,
 });
 
 if (prod) { await ctx.rebuild(); process.exit(0); }
