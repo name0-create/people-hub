@@ -11,6 +11,7 @@
 import { App, Modal, Notice, Setting } from "obsidian";
 import { logTalk, LOG_TYPES, TalkEntry } from "../repository/person-actions";
 import type { PeopleHubPlugin } from "../main";
+import { describeError } from "../repository/errors";
 import type { PersonView } from "../models/person-view";
 import { today, toISO } from "../core/dates";
 
@@ -142,7 +143,14 @@ export class QuickLogSheet extends Modal {
     saveBtn.addEventListener("click", async () => {
       saveBtn.setText("Saving…");
       saveBtn.setAttr("disabled", "true");
-      await logTalk(this.app, this.plugin.settings, this.person, this.e);
+      try {
+        await logTalk(this.plugin.people, this.plugin.settings, this.person, this.e);
+      } catch (err) {
+        new Notice(`Could not save talk: ${describeError(err)}`, 8000);
+        saveBtn.setText("Save talk");
+        saveBtn.removeAttribute("disabled");
+        return;
+      }
       new Notice(`✓ Logged talk with ${this.person.name}${this.e.presence ? ` · Presence ${this.e.presence}/5` : ""}`);
       this.onSaved?.();
       this.close();

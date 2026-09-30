@@ -1,5 +1,27 @@
 # People Hub — Changelog
 
+## Unreleased — Phase 3: Markdown repository layer
+
+- **`repository/MarkdownStore.ts`** — the only module that calls vault/file-manager write APIs.
+  Frontmatter via `processFrontMatter` (atomic, no YAML string handling, body untouched); renames via
+  `fileManager.renameFile` (updates links); deletes via `fileManager.trashFile`; nothing is overwritten;
+  waits for the metadata cache after writes so re-reads aren't stale; per-note lock for multi-step ops.
+- **`repository/PersonRepository.ts`** — `getPerson`, `getPersonById`, `createPerson`, `updatePerson`,
+  `renamePerson`, `archivePerson`, `restorePerson`, `deletePerson`. Patches are validated against
+  `SchemaRegistry`; name edits sync `display_name`/`title` and rename the file; `updated` is maintained;
+  reads normalise legacy v0.2 keys to the canonical `Person` without modifying the note.
+- **`repository/InteractionRepository.ts`**, **`MeetingRepository.ts`** (on a generic `NoteRepository`).
+- **`models/PropertyValidation.ts`** — `coerceValue` (lenient read) / `validateValue` (strict write).
+- `PropertyDefinition.partialDate` — birthdays/anniversaries may stay year-less (`--MM-DD`).
+- **Renamed** the old query class `PersonRepository` → `PeopleIndex` (read side); `plugin.repo` → `plugin.index`.
+  New: `plugin.people`, `plugin.interactions`, `plugin.meetings`.
+- `person-actions.ts` (`logTalk`, `snooze`, `setPaused`, `createPerson`) now writes through `PersonRepository`;
+  UI call sites show repository errors as notices.
+- `PeopleIndex` also reads canonical keys (`relationship_type`, `prm_tier`, `cadence`).
+- **`minAppVersion` 1.5.0 → 1.6.6** (`FileManager.trashFile`).
+- Behaviour change: new people are written with canonical keys (`birthdate`, `instagram`, `prm_tier`, `PER-…` id,
+  ISO `created`, …); v0.2 scoring fields are kept as extension fields. Snooze now writes `next_encounter`.
+
 ## Unreleased — Phase 2: Canonical People data model
 
 - **`models/Person.ts`** — canonical stored person (frontmatter) interface, `schema_version`, `PER` id prefix.

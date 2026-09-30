@@ -71,6 +71,9 @@ export interface PropertyDefinition {
   /** If true, values outside `options` are accepted (options become suggestions). */
   allowCustom?: boolean;
 
+  /** `date` only: also accept a year-less "--MM-DD" (e.g. birthdays without a known year). */
+  partialDate?: boolean;
+
   /** Value written when a new person is created. */
   default?: string | number | boolean;
 

@@ -35,11 +35,16 @@ declare module "obsidian" {
 
   interface FileManager {
     processFrontMatter(file: TFile, fn: (fm: Record<string, unknown>) => void): Promise<void>;
+    /** Rename/move and update links to the file (unlike Vault.rename). Since 0.11.0. */
+    renameFile(file: TAbstractFile, newPath: string): Promise<void>;
+    /** Trash according to the user's trash preference. Since 1.6.6. */
+    trashFile(file: TAbstractFile): Promise<void>;
   }
 
   interface MetadataCache extends Events {
     getFileCache(file: TFile): { frontmatter?: Record<string, unknown>; links?: unknown[] } | null;
     on(name: "changed" | "deleted" | "resolved", cb: (file: TFile) => unknown): EventRef;
+    off(name: "changed" | "deleted" | "resolved", cb: (file: TFile) => unknown): void;
   }
 
   interface App {

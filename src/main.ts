@@ -3,7 +3,11 @@
 import { debounce, Editor, Notice, Plugin, TFile } from "obsidian";
 import { DEFAULT_SETTINGS, PeopleHubSettings, PeopleSettingTab } from "./core/settings";
 import { FolderService } from "./core/folder-service";
-import { PersonRepository } from "./repository/person-repository";
+import { PeopleIndex } from "./repository/PeopleIndex";
+import { MarkdownStore } from "./repository/MarkdownStore";
+import { PersonRepository } from "./repository/PersonRepository";
+import { InteractionRepository } from "./repository/InteractionRepository";
+import { MeetingRepository } from "./repository/MeetingRepository";
 import { createWithTemplater } from "./repository/person-actions";
 import { runQuickAddMacro } from "./integrations/quickadd";
 import { CarnegieModal, LogModal, NewPersonModal, PersonPicker } from "./views/modals";
@@ -17,14 +21,22 @@ export type { PeopleHubPlugin };
 class PeopleHubPlugin extends Plugin {
   settings!: PeopleHubSettings;
   folders!:  FolderService;
-  repo!:     PersonRepository;
+  index!:    PeopleIndex;            // read side: queries over person notes
+  people!:   PersonRepository;       // write side: person notes
+  interactions!: InteractionRepository;
+  meetings!: MeetingRepository;
   pendingTab: Tab | null = null;
   private statusEl: HTMLElement | null = null;
 
   async onload() {
     await this.loadSettings();
     this.folders = new FolderService(this.app, () => this.settings);
-    this.repo    = new PersonRepository(this.app, this.folders, () => this.settings);
+    this.index    = new PeopleIndex(this.app, this.folders, () => this.settings);
+    const store   = new MarkdownStore(this.app, this.folders);
+    const changed = () => this.refresh();   // invalidates the index, updates status bar + open views
+    this.people       = new PersonRepository(this.folders, store, this.index, () => this.settings, changed);
+    this.interactions = new InteractionRepository(store, changed);
+    this.meetings     = new MeetingRepository(store, changed);
 
     this.registerView(VIEW_TYPE, leaf => new PeopleView(leaf, this));
     this.addRibbonIcon("users", "Open People Hub", () => this.activateView());
@@ -57,20 +69,20 @@ class PeopleHubPlugin extends Plugin {
   async saveSettings() { await this.saveData(this.settings); this.refresh(); }
 
   refresh(notify = false) {
-    this.repo.invalidate();
+    this.index.invalidate();
     this.updateStatusBar();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE))
       if (leaf.view instanceof PeopleView) leaf.view.render();
-    if (notify) new Notice(`People Hub: ${this.repo.all().length} people indexed`);
+    if (notify) new Notice(`People Hub: ${this.index.all().length} people indexed`);
   }
 
   private updateStatusBar() {
     if (!this.statusEl) return;
     if (!this.settings.showStatusBar) { this.statusEl.setText(""); return; }
-    const bToday = this.repo.all().filter(p => p.birthday?.days === 0).length;
-    const aToday = this.repo.upcomingAnniversaries(0).length;
-    const due    = this.repo.reachOut().length;
-    const lowC   = this.repo.carnegieAlert(3).length;
+    const bToday = this.index.all().filter(p => p.birthday?.days === 0).length;
+    const aToday = this.index.upcomingAnniversaries(0).length;
+    const due    = this.index.reachOut().length;
+    const lowC   = this.index.carnegieAlert(3).length;
     const parts  = [];
     if (bToday) parts.push(`🎂${bToday}`);
     if (aToday) parts.push(`💍${aToday}`);
@@ -81,10 +93,10 @@ class PeopleHubPlugin extends Plugin {
 
   private startupNotice() {
     const parts: string[] = [];
-    const bToday = this.repo.all().filter(p => p.birthday?.days === 0);
-    const aToday = this.repo.upcomingAnniversaries(0);
-    const due    = this.repo.reachOut().length;
-    const lowC   = this.repo.carnegieAlert(3);
+    const bToday = this.index.all().filter(p => p.birthday?.days === 0);
+    const aToday = this.index.upcomingAnniversaries(0);
+    const due    = this.index.reachOut().length;
+    const lowC   = this.index.carnegieAlert(3);
     if (bToday.length) parts.push(`🎂 Birthday: ${bToday.map(p => p.name).join(", ")}`);
     if (aToday.length) parts.push(`💍 Anniversary: ${aToday.map(p => `${p.name} (${p.anniversary!.label})`).join(", ")}`);
     if (due)           parts.push(`📞 ${due} to reach out to`);
@@ -134,44 +146,44 @@ class PeopleHubPlugin extends Plugin {
       id: "log-talk", name: "People Hub: Log talk",
       callback: () => {
         const f = this.app.workspace.getActiveFile();
-        const p = f && this.repo.all().find(x => x.file.path === f.path);
-        p ? this.logFor(p) : new PersonPicker(this.app, this.repo.all(), x => this.logFor(x)).open();
+        const p = f && this.index.all().find(x => x.file.path === f.path);
+        p ? this.logFor(p) : new PersonPicker(this.app, this.index.all(), x => this.logFor(x)).open();
       },
     });
     this.addCommand({
       id: "quick-log", name: "People Hub: Quick-log (one-tap sheet)",
       callback: () => {
         const f = this.app.workspace.getActiveFile();
-        const p = f && this.repo.all().find(x => x.file.path === f.path);
-        p ? this.quickLogFor(p) : new PersonPicker(this.app, this.repo.all(), x => this.quickLogFor(x)).open();
+        const p = f && this.index.all().find(x => x.file.path === f.path);
+        p ? this.quickLogFor(p) : new PersonPicker(this.app, this.index.all(), x => this.quickLogFor(x)).open();
       },
     });
     this.addCommand({
       id: "carnegie-active", name: "People Hub: Carnegie for active note",
       callback: () => {
         const f = this.app.workspace.getActiveFile();
-        const p = f && this.repo.all().find(x => x.file.path === f.path);
-        p ? this.carnegieFor(p) : new PersonPicker(this.app, this.repo.all(), x => this.carnegieFor(x)).open();
+        const p = f && this.index.all().find(x => x.file.path === f.path);
+        p ? this.carnegieFor(p) : new PersonPicker(this.app, this.index.all(), x => this.carnegieFor(x)).open();
       },
     });
     this.addCommand({
       id: "insert-reachout", name: "People Hub: Insert reach-out list",
       editorCallback: (e: Editor) => {
-        const rows = this.repo.reachOut();
+        const rows = this.index.reachOut();
         e.replaceSelection(rows.length ? rows.map(p => `- 📞 [[${p.file.basename}]] — ${reachOutMeta(p)}`).join("\n") + "\n" : "Everyone reached. 🎉\n");
       },
     });
     this.addCommand({
       id: "insert-birthdays", name: "People Hub: Insert upcoming birthdays",
       editorCallback: (e: Editor) => {
-        const rows = this.repo.upcomingBirthdays(this.settings.birthdayLookahead);
+        const rows = this.index.upcomingBirthdays(this.settings.birthdayLookahead);
         e.replaceSelection(rows.length ? rows.map(p => `- 🎂 [[${p.file.basename}]] — ${birthdayMeta(p)}`).join("\n") + "\n" : "No upcoming birthdays.\n");
       },
     });
     this.addCommand({
       id: "insert-anniversaries", name: "People Hub: Insert upcoming anniversaries",
       editorCallback: (e: Editor) => {
-        const rows = this.repo.upcomingAnniversaries(this.settings.anniversaryLookahead);
+        const rows = this.index.upcomingAnniversaries(this.settings.anniversaryLookahead);
         e.replaceSelection(rows.length ? rows.map(p => `- 💍 [[${p.file.basename}]] — ${anniversaryMeta(p)}`).join("\n") + "\n" : "No upcoming anniversaries.\n");
       },
     });
@@ -191,10 +203,10 @@ class PeopleHubPlugin extends Plugin {
       const list = box.createDiv({ cls: "ph-list" });
       type M = (p: PersonView) => string;
       let rows: PersonView[]; let meta: M;
-      if (view === "birthdays")     { rows = this.repo.upcomingBirthdays(days || this.settings.birthdayLookahead); meta = birthdayMeta; }
-      else if (view === "anniversaries") { rows = this.repo.upcomingAnniversaries(days || this.settings.anniversaryLookahead); meta = anniversaryMeta; }
-      else if (view === "carnegie") { rows = this.repo.carnegieAlert(3); meta = p => `Carnegie avg ${p.carnegie.avg}/5`; }
-      else                          { rows = this.repo.reachOut(); meta = reachOutMeta; }
+      if (view === "birthdays")     { rows = this.index.upcomingBirthdays(days || this.settings.birthdayLookahead); meta = birthdayMeta; }
+      else if (view === "anniversaries") { rows = this.index.upcomingAnniversaries(days || this.settings.anniversaryLookahead); meta = anniversaryMeta; }
+      else if (view === "carnegie") { rows = this.index.carnegieAlert(3); meta = p => `Carnegie avg ${p.carnegie.avg}/5`; }
+      else                          { rows = this.index.reachOut(); meta = reachOutMeta; }
       if (!rows.length) { list.createDiv({ text: "Nothing to show.", cls: "ph-empty" }); return; }
       rows.forEach(p => {
         const row = list.createDiv({ cls: ["ph-row", `ph-tier-${p.tier}`] });
@@ -207,7 +219,7 @@ class PeopleHubPlugin extends Plugin {
 
   private registerChangeEvents() {
     const onChange = debounce(() => this.refresh(), 500, true);
-    this.registerEvent(this.app.metadataCache.on("changed", (f: TFile) => { if (this.repo.isPersonFile(f)) onChange(); }));
+    this.registerEvent(this.app.metadataCache.on("changed", (f: TFile) => { if (this.index.isPersonFile(f)) onChange(); }));
     this.registerEvent(this.app.metadataCache.on("deleted", () => onChange()));
     this.registerEvent(this.app.vault.on("rename", () => onChange()));
     this.registerInterval(window.setInterval(() => this.refresh(), 60 * 60 * 1000));

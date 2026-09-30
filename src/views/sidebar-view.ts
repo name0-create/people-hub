@@ -99,7 +99,7 @@ export class PeopleView extends ItemView {
   // TODAY TAB
   // ─────────────────────────────────────────────────────────────────────────
   private renderToday(body: HTMLElement) {
-    const idx = this.plugin.repo;
+    const idx = this.plugin.index;
     const s   = this.plugin.settings;
 
     // Birthday today
@@ -186,7 +186,7 @@ export class PeopleView extends ItemView {
     const draw = () => {
       list.empty();
       const q    = this.search.toLowerCase();
-      const rows = this.plugin.repo.all().filter(p =>
+      const rows = this.plugin.index.all().filter(p =>
         (!q || `${p.name} ${p.typePerson} ${p.alsoIs} ${p.company} ${p.interests}`.toLowerCase().includes(q)) &&
         (this.filter === "all" || (this.filter === "due" ? p.needsReachOut : p.tier === this.filter))
       );
@@ -211,7 +211,7 @@ export class PeopleView extends ItemView {
   // BIRTHDAYS TAB
   // ─────────────────────────────────────────────────────────────────────────
   private renderBirthdays(body: HTMLElement) {
-    const idx = this.plugin.repo;
+    const idx = this.plugin.index;
     const s   = this.plugin.settings;
 
     // Calendar nav
@@ -309,7 +309,7 @@ export class PeopleView extends ItemView {
   // CARNEGIE TAB
   // ─────────────────────────────────────────────────────────────────────────
   private renderCarnegie(body: HTMLElement) {
-    const idx = this.plugin.repo;
+    const idx = this.plugin.index;
     const all = idx.all().filter(p => p.active && !p.paused);
 
     // Aggregate dashboard

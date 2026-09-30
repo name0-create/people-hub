@@ -4,6 +4,7 @@ import { Menu, Notice } from "obsidian";
 import type { PeopleHubPlugin } from "../main";
 import type { AnniversaryInfo, PersonView } from "../models/person-view";
 import { snooze, setPaused } from "../repository/person-actions";
+import { describeError } from "../repository/errors";
 
 // ── Date formatting ───────────────────────────────────────────────────────────
 export function relDays(n: number): string {
@@ -90,17 +91,18 @@ export function renderPersonRow(
     for (const d of [1, 3, 7, 30]) {
       menu.addItem(i =>
         i.setTitle(`Snooze ${d}d`).setIcon("clock").onClick(async () => {
-          await snooze(plugin.app, p, d);
-          new Notice(`${p.name} snoozed ${d}d`);
-          plugin.refresh();
+          try {
+            await snooze(plugin.people, p, d);
+            new Notice(`${p.name} snoozed ${d}d`);
+          } catch (e) { new Notice(`Could not snooze: ${describeError(e)}`, 8000); }
         })
       );
     }
     menu.addSeparator();
     menu.addItem(i =>
       i.setTitle(p.paused ? "Resume tracking" : "Pause tracking").setIcon("pause").onClick(async () => {
-        await setPaused(plugin.app, p, !p.paused);
-        plugin.refresh();
+        try { await setPaused(plugin.people, p, !p.paused); }
+        catch (e) { new Notice(`Could not update: ${describeError(e)}`, 8000); }
       })
     );
     menu.addItem(i =>

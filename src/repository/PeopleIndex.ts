@@ -1,5 +1,6 @@
-// ─── PersonRepository ─────────────────────────────────────────────────────────
-// Owns the in-memory index and all query methods.
+// ─── PeopleIndex ──────────────────────────────────────────────────────────────
+// READ side. In-memory index of person notes (PersonView) + all list/query methods.
+// Never writes. All writes go through PersonRepository → MarkdownStore.
 // Uses FolderService for every path decision.
 
 import { App, TFile } from "obsidian";
@@ -100,7 +101,7 @@ function parseAnniversary(raw: unknown, t: Date): AnniversaryInfo | null {
 const INACTIVE = new Set(["archived", "inactive", "lost", "deceased", "done"]);
 
 // ─── Repository ───────────────────────────────────────────────────────────────
-export class PersonRepository {
+export class PeopleIndex {
   private cache: PersonView[] | null = null;
 
   constructor(
@@ -150,12 +151,12 @@ export class PersonRepository {
   private parse(file: TFile, fm: FM, t: Date): PersonView {
     const s = this.getSettings();
     const name = str(pick(fm, ["name", "display_name", "full_name", "title"])) || file.basename;
-    const typePerson = str(pick(fm, ["type_person", "type_person_primary", "category"]));
+    const typePerson = str(pick(fm, ["type_person", "type_person_primary", "relationship_type", "category"]));
     const status = str(fm.status).toLowerCase() || "active";
     const paused = status === "paused" || status === "archived";
     const active = !INACTIVE.has(status);
 
-    let tier = str(pick(fm, ["prm-tier", "circle", "tier"])).toLowerCase() as Tier;
+    let tier = str(pick(fm, ["prm-tier", "prm_tier", "circle", "tier"])).toLowerCase() as Tier;
     if (!TIERS.includes(tier)) tier = typePerson ? typeToTier(typePerson) : "extended";
 
     const lastContact = parseDate(pick(fm, ["last_contact", "last_contacted"]));
@@ -197,7 +198,7 @@ export class PersonRepository {
       anniversary,
       lastContact,
       nextContact: nextContact ?? (lastContact ? addDays(lastContact, cadence) : null),
-      frequency:    str(fm.frequency),
+      frequency:    str(pick(fm, ["frequency", "cadence"])),
       sinceContact: lastContact ? diffDays(lastContact, t) : null,
       dueIn,
       needsReachOut: active && !paused && dueIn <= 0,

@@ -7,6 +7,7 @@ import {
   LOG_TYPES, logTalk, TalkEntry,
 } from "../repository/person-actions";
 import { today, toISO } from "../core/dates";
+import { describeError } from "../repository/errors";
 import { CARNEGIE_LABELS, PersonView, Tier, TIERS } from "../models/person-view";
 
 // ── Person picker ─────────────────────────────────────────────────────────
@@ -56,7 +57,9 @@ export class LogModal extends Modal {
     }
     new Setting(contentEl).addButton(b =>
       b.setButtonText("Save").setCta().onClick(async () => {
-        await logTalk(this.app, this.plugin.settings, this.person, e);
+        try {
+          await logTalk(this.plugin.people, this.plugin.settings, this.person, e);
+        } catch (err) { new Notice(`Could not save talk: ${describeError(err)}`, 8000); return; }
         new Notice(`✓ Logged talk with ${this.person.name} · Presence ${e.presence}/5`);
         this.close();
       })
@@ -140,9 +143,9 @@ export class NewPersonModal extends Modal {
     new Setting(contentEl).addButton(b =>
       b.setButtonText("Create").setCta().onClick(async () => {
         if (!o.name.trim()) { new Notice("Name is required"); return; }
-        const file = await createPerson(
-          this.app, this.plugin.settings, this.plugin.folders, o
-        );
+        let file;
+        try { file = await createPerson(this.plugin.people, this.plugin.settings, o); }
+        catch (err) { new Notice(`Could not create person: ${describeError(err)}`, 8000); return; }
         this.close();
         await this.app.workspace.getLeaf(false).openFile(file);
       })

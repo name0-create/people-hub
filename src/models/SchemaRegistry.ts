@@ -196,8 +196,8 @@ const PERSON_SCHEMA: PersonSchema = {
   met_location:   text("Met at", "relationship", { legacyKeys: ["where_met"] }),
 
   // Dates
-  birthdate:      date("Birthdate", "dates", { legacyKeys: ["birthday", "birth_date", "dob"] }),
-  anniversary:    date("Anniversary", "dates", { legacyKeys: ["friendiversary", "wed_date", "anniversary_date"] }),
+  birthdate:      date("Birthdate", "dates", { partialDate: true, legacyKeys: ["birthday", "birth_date", "dob"] }),
+  anniversary:    date("Anniversary", "dates", { partialDate: true, legacyKeys: ["friendiversary", "wed_date", "anniversary_date"] }),
 
   // Context
   interests:           list("Interests", "context", { description: "v0.2 stored this as a single string." }),
