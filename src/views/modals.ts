@@ -7,22 +7,22 @@ import {
   LOG_TYPES, logTalk, TalkEntry,
 } from "../repository/person-actions";
 import { today, toISO } from "../core/dates";
-import { CARNEGIE_LABELS, Person, Tier, TIERS } from "../models/person";
+import { CARNEGIE_LABELS, PersonView, Tier, TIERS } from "../models/person-view";
 
-// ── Person picker ─────────────────────────────────────────────────────────────
-export class PersonPicker extends FuzzySuggestModal<Person> {
-  constructor(app: App, private people: Person[], private onPick: (p: Person) => void) {
+// ── Person picker ─────────────────────────────────────────────────────────
+export class PersonPicker extends FuzzySuggestModal<PersonView> {
+  constructor(app: App, private people: PersonView[], private onPick: (p: PersonView) => void) {
     super(app);
     this.setPlaceholder("Choose a person…");
   }
   getItems()             { return this.people; }
-  getItemText(p: Person) { return `${p.name}${p.typePerson ? " · " + p.typePerson : ""}`; }
-  onChooseItem(p: Person){ this.onPick(p); }
+  getItemText(p: PersonView) { return `${p.name}${p.typePerson ? " · " + p.typePerson : ""}`; }
+  onChooseItem(p: PersonView){ this.onPick(p); }
 }
 
 // ── Full log modal ────────────────────────────────────────────────────────────
 export class LogModal extends Modal {
-  constructor(app: App, private plugin: PeopleHubPlugin, private person: Person) { super(app); }
+  constructor(app: App, private plugin: PeopleHubPlugin, private person: PersonView) { super(app); }
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
@@ -67,7 +67,7 @@ export class LogModal extends Modal {
 
 // ── Carnegie modal ────────────────────────────────────────────────────────────
 export class CarnegieModal extends Modal {
-  constructor(app: App, private plugin: PeopleHubPlugin, private person: Person) { super(app); }
+  constructor(app: App, private plugin: PeopleHubPlugin, private person: PersonView) { super(app); }
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();

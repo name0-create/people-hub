@@ -10,7 +10,7 @@ import { CarnegieModal, LogModal, NewPersonModal, PersonPicker } from "./views/m
 import { QuickLogSheet } from "./views/quick-log-sheet";
 import { PeopleView, Tab, VIEW_TYPE } from "./views/sidebar-view";
 import { anniversaryMeta, birthdayMeta, reachOutMeta } from "./views/ui";
-import type { Person } from "./models/person";
+import type { PersonView } from "./models/person-view";
 
 export type { PeopleHubPlugin };
 
@@ -117,10 +117,10 @@ class PeopleHubPlugin extends Plugin {
     new NewPersonModal(this.app, this).open();
   }
 
-  logFor(p: Person)       { new LogModal(this.app, this, p).open(); }
-  carnegieFor(p: Person)  { new CarnegieModal(this.app, this, p).open(); }
-  quickLogFor(p: Person)  { new QuickLogSheet(this.app, this, p, () => this.refresh()).open(); }
-  openPerson(p: Person, newTab: boolean) {
+  logFor(p: PersonView)       { new LogModal(this.app, this, p).open(); }
+  carnegieFor(p: PersonView)  { new CarnegieModal(this.app, this, p).open(); }
+  quickLogFor(p: PersonView)  { new QuickLogSheet(this.app, this, p, () => this.refresh()).open(); }
+  openPerson(p: PersonView, newTab: boolean) {
     this.app.workspace.getLeaf(newTab ? "tab" : false).openFile(p.file);
   }
 
@@ -189,8 +189,8 @@ class PeopleHubPlugin extends Plugin {
       const days = parseInt(cfg.days ?? "", 10);
       const box  = el.createDiv({ cls: "ph-root ph-embed" });
       const list = box.createDiv({ cls: "ph-list" });
-      type M = (p: Person) => string;
-      let rows: Person[]; let meta: M;
+      type M = (p: PersonView) => string;
+      let rows: PersonView[]; let meta: M;
       if (view === "birthdays")     { rows = this.repo.upcomingBirthdays(days || this.settings.birthdayLookahead); meta = birthdayMeta; }
       else if (view === "anniversaries") { rows = this.repo.upcomingAnniversaries(days || this.settings.anniversaryLookahead); meta = anniversaryMeta; }
       else if (view === "carnegie") { rows = this.repo.carnegieAlert(3); meta = p => `Carnegie avg ${p.carnegie.avg}/5`; }

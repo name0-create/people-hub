@@ -3,7 +3,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import type { PeopleHubPlugin } from "../main";
 import { today, diffDays } from "../core/dates";
-import { CARNEGIE_LABELS, Person, TIERS } from "../models/person";
+import { CARNEGIE_LABELS, PersonView, TIERS } from "../models/person-view";
 import {
   anniversaryMeta, birthdayMeta, carnegieBar,
   reachOutMeta, relDays, renderPersonRow,
@@ -270,7 +270,7 @@ export class PeopleView extends ItemView {
     }
   }
 
-  private renderCalGrid(body: HTMLElement, map: Map<number, Person[]>, chipColor?: string) {
+  private renderCalGrid(body: HTMLElement, map: Map<number, PersonView[]>, chipColor?: string) {
     const s      = this.plugin.settings;
     const grid   = body.createDiv({ cls: "ph-cal" });
     const names  = ["S","M","T","W","T","F","S"];

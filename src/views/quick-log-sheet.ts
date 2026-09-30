@@ -11,7 +11,7 @@
 import { App, Modal, Notice, Setting } from "obsidian";
 import { logTalk, LOG_TYPES, TalkEntry } from "../repository/person-actions";
 import type { PeopleHubPlugin } from "../main";
-import type { Person } from "../models/person";
+import type { PersonView } from "../models/person-view";
 import { today, toISO } from "../core/dates";
 
 const TYPE_ICON: Record<string, string> = {
@@ -26,7 +26,7 @@ export class QuickLogSheet extends Modal {
   constructor(
     app: App,
     private plugin: PeopleHubPlugin,
-    private person: Person,
+    private person: PersonView,
     private onSaved?: () => void,
   ) {
     super(app);
@@ -165,8 +165,8 @@ export class SwipeHandler {
 
   constructor(
     private container: HTMLElement,
-    private getPersonForEl: (el: HTMLElement) => Person | null,
-    private open: (p: Person) => void,
+    private getPersonForEl: (el: HTMLElement) => PersonView | null,
+    private open: (p: PersonView) => void,
   ) {
     this.attach();
   }

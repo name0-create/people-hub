@@ -2,7 +2,7 @@
 
 import { Menu, Notice } from "obsidian";
 import type { PeopleHubPlugin } from "../main";
-import type { AnniversaryInfo, Person } from "../models/person";
+import type { AnniversaryInfo, PersonView } from "../models/person-view";
 import { snooze, setPaused } from "../repository/person-actions";
 
 // ── Date formatting ───────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ export function fmtShort(d: Date): string {
 }
 
 // ── Socials ───────────────────────────────────────────────────────────────────
-export function renderSocials(parent: HTMLElement, p: Person) {
+export function renderSocials(parent: HTMLElement, p: PersonView) {
   if (!p.socials.length) return;
   const wrap = parent.createDiv({ cls: "ph-socials" });
   for (const s of p.socials) {
@@ -38,7 +38,7 @@ export function carnegieBar(parent: HTMLElement, avg: number, weakest: string) {
   wrap.createSpan({ text: `C ${avg}/5`, cls: "ph-cbar-lbl", attr: { title: `Weakest: ${weakest}` } });
 }
 
-// ── Person row ────────────────────────────────────────────────────────────────
+// ── Person row ────────────────────────────────────────────────────────────
 const TIER_ICON: Record<string, string> = {
   inner: "❤️", close: "🟠", extended: "🔵", professional: "🟢",
 };
@@ -46,7 +46,7 @@ const TIER_ICON: Record<string, string> = {
 export function renderPersonRow(
   plugin: PeopleHubPlugin,
   parent: HTMLElement,
-  p: Person,
+  p: PersonView,
   meta: string,
   /** Show action buttons + swipe icon */
   actions: boolean,
@@ -116,7 +116,7 @@ export function renderPersonRow(
 }
 
 // ── Meta strings ──────────────────────────────────────────────────────────────
-export function reachOutMeta(p: Person): string {
+export function reachOutMeta(p: PersonView): string {
   return [
     p.frequency || p.tier,
     p.sinceContact !== null ? `last ${p.sinceContact}d ago` : "never contacted",
@@ -126,7 +126,7 @@ export function reachOutMeta(p: Person): string {
   ].filter(Boolean).join(" · ");
 }
 
-export function birthdayMeta(p: Person): string {
+export function birthdayMeta(p: PersonView): string {
   const b = p.birthday!;
   return [
     fmtShort(b.date),
@@ -135,7 +135,7 @@ export function birthdayMeta(p: Person): string {
   ].filter(Boolean).join(" · ");
 }
 
-export function anniversaryMeta(p: Person): string {
+export function anniversaryMeta(p: PersonView): string {
   const a = p.anniversary!;
   return [
     a.label,

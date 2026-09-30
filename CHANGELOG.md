@@ -1,5 +1,18 @@
 # People Hub — Changelog
 
+## Unreleased — Phase 2: Canonical People data model
+
+- **`models/Person.ts`** — canonical stored person (frontmatter) interface, `schema_version`, `PER` id prefix.
+- **`models/PersonProperty.ts`** — `PropertyDefinition`, `PropertyType`, `MetaBindControl`, `PropertyGroup`.
+- **`models/Interaction.ts`**, **`models/Meeting.ts`** — canonical models for stand-alone interaction / meeting notes.
+- **`models/SchemaRegistry.ts`** — single registry of all 64 person properties (type, editable, Meta Bind
+  control, searchable, filterable, options, legacy keys). Typed against `Person`: a missing, extra or
+  wrongly-typed definition fails the build.
+- **Renamed** `models/person.ts` → `models/person-view.ts` and its `Person` interface → `PersonView`
+  (frees the name `Person`; avoids a case-only filename clash on macOS/Windows).
+- `LOG_TYPES` in `person-actions.ts` now derives from `INTERACTION_TYPES`.
+- No behaviour change: the repository still reads the v0.2 frontmatter keys. Wiring it to the registry is next.
+
 ## v0.2.0 — Phase 1 complete
 
 ### Architecture (Phase 1 from the spec)

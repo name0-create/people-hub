@@ -9,8 +9,8 @@ import type { FolderService } from "../core/folder-service";
 import type { PeopleHubSettings } from "../core/settings";
 import {
   AnniversaryInfo, CARNEGIE_LABELS, CarnegieScores,
-  Person, Tier, TIERS, TalkLog
-} from "../models/person";
+  PersonView, Tier, TIERS, TalkLog
+} from "../models/person-view";
 
 type FM = Record<string, unknown>;
 
@@ -101,7 +101,7 @@ const INACTIVE = new Set(["archived", "inactive", "lost", "deceased", "done"]);
 
 // ─── Repository ───────────────────────────────────────────────────────────────
 export class PersonRepository {
-  private cache: Person[] | null = null;
+  private cache: PersonView[] | null = null;
 
   constructor(
     private app: App,
@@ -113,7 +113,7 @@ export class PersonRepository {
 
   invalidate() { this.cache = null; }
 
-  all(): Person[] {
+  all(): PersonView[] {
     if (!this.cache) {
       this.cache = this.build();
       this.log(`Index built: ${this.cache.length} people`);
@@ -137,8 +137,8 @@ export class PersonRepository {
     return !!folder && file.path.startsWith(folder + "/");
   }
 
-  private build(): Person[] {
-    const out: Person[] = [];
+  private build(): PersonView[] {
+    const out: PersonView[] = [];
     const t = today();
     for (const file of this.app.vault.getMarkdownFiles()) {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as FM | undefined;
@@ -147,7 +147,7 @@ export class PersonRepository {
     return out.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  private parse(file: TFile, fm: FM, t: Date): Person {
+  private parse(file: TFile, fm: FM, t: Date): PersonView {
     const s = this.getSettings();
     const name = str(pick(fm, ["name", "display_name", "full_name", "title"])) || file.basename;
     const typePerson = str(pick(fm, ["type_person", "type_person_primary", "category"]));
@@ -218,14 +218,14 @@ export class PersonRepository {
   }
 
   // ─── Queries ──────────────────────────────────────────────────────────────
-  upcomingBirthdays(days: number): Person[] {
+  upcomingBirthdays(days: number): PersonView[] {
     return this.all()
       .filter(p => p.birthday && !INACTIVE.has(p.status) && p.birthday.days <= days)
       .sort((a, b) => a.birthday!.days - b.birthday!.days);
   }
 
-  birthdaysInMonth(year: number, month0: number): Map<number, Person[]> {
-    const map = new Map<number, Person[]>();
+  birthdaysInMonth(year: number, month0: number): Map<number, PersonView[]> {
+    const map = new Map<number, PersonView[]>();
     for (const p of this.all()) {
       if (!p.birthdate || INACTIVE.has(p.status) || p.birthdate.month !== month0 + 1) continue;
       map.set(p.birthdate.day, [...(map.get(p.birthdate.day) ?? []), p]);
@@ -233,19 +233,19 @@ export class PersonRepository {
     return map;
   }
 
-  missingBirthdays(): Person[] {
+  missingBirthdays(): PersonView[] {
     return this.all().filter(p => !p.birthdate && !INACTIVE.has(p.status));
   }
 
   // ─── Anniversaries (v0.2) ─────────────────────────────────────────────────
-  upcomingAnniversaries(days: number): Person[] {
+  upcomingAnniversaries(days: number): PersonView[] {
     return this.all()
       .filter(p => p.anniversary && !INACTIVE.has(p.status) && p.anniversary.days <= days)
       .sort((a, b) => a.anniversary!.days - b.anniversary!.days);
   }
 
-  anniversariesInMonth(year: number, month0: number): Map<number, Person[]> {
-    const map = new Map<number, Person[]>();
+  anniversariesInMonth(year: number, month0: number): Map<number, PersonView[]> {
+    const map = new Map<number, PersonView[]>();
     for (const p of this.all()) {
       if (!p.anniversary || INACTIVE.has(p.status)) continue;
       const occ = occurrence({ month: p.anniversary.date.getMonth() + 1, day: p.anniversary.date.getDate(), year: null }, year);
@@ -256,7 +256,7 @@ export class PersonRepository {
     return map;
   }
 
-  missingAnniversaries(): Person[] {
+  missingAnniversaries(): PersonView[] {
     // only people whose type_person implies a relational anniversary
     const relevant = new Set(["girlfriend", "boyfriend", "partner", "spouse", "husband", "wife",
       "close-friend", "friend", "family"]);
@@ -268,20 +268,20 @@ export class PersonRepository {
     });
   }
 
-  reachOut(): Person[] {
+  reachOut(): PersonView[] {
     const rank: Record<Tier, number> = { inner: 0, close: 1, extended: 2, professional: 3 };
     return this.all()
       .filter(p => p.needsReachOut)
       .sort((a, b) => a.dueIn - b.dueIn || rank[a.tier] - rank[b.tier]);
   }
 
-  carnegieAlert(threshold = 3): Person[] {
+  carnegieAlert(threshold = 3): PersonView[] {
     return this.all()
       .filter(p => p.active && !p.paused && p.carnegie.avg > 0 && p.carnegie.avg < threshold)
       .sort((a, b) => a.carnegie.avg - b.carnegie.avg);
   }
 
-  promiseAlert(threshold = 70): Person[] {
+  promiseAlert(threshold = 70): PersonView[] {
     return this.all()
       .filter(p => p.active && p.promiseRatio !== null && p.promiseRatio < threshold)
       .sort((a, b) => (a.promiseRatio ?? 0) - (b.promiseRatio ?? 0));

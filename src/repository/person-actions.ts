@@ -6,14 +6,12 @@ import { App, normalizePath, Notice, TFile } from "obsidian";
 import { addDays, today, toISO } from "../core/dates";
 import type { FolderService } from "../core/folder-service";
 import type { PeopleHubSettings } from "../core/settings";
-import type { Person, Tier } from "../models/person";
+import { INTERACTION_TYPES, type InteractionType } from "../models/Interaction";
+import type { PersonView, Tier } from "../models/person-view";
 
 // ── Talk entry ────────────────────────────────────────────────────────────────
-export const LOG_TYPES = [
-  "call", "whatsapp", "coffee", "lunch", "walk",
-  "home-1on1", "video", "message", "email",
-] as const;
-export type LogType = typeof LOG_TYPES[number];
+export const LOG_TYPES = INTERACTION_TYPES;   // canonical list lives in models/Interaction.ts
+export type LogType = InteractionType;
 
 export interface TalkEntry {
   date:     string;
@@ -40,7 +38,7 @@ const IN_PERSON = new Set(["coffee", "lunch", "walk", "home-1on1"]);
 export async function logTalk(
   app: App,
   s: PeopleHubSettings,
-  p: Person,
+  p: PersonView,
   e: TalkEntry,
 ): Promise<void> {
   await app.fileManager.processFrontMatter(p.file, fm => {
@@ -88,7 +86,7 @@ export async function logTalk(
 export async function quickLog(
   app: App,
   s: PeopleHubSettings,
-  p: Person,
+  p: PersonView,
   type: LogType | string = "call",
 ): Promise<void> {
   const e: TalkEntry = {
@@ -118,7 +116,7 @@ export function appendUnderHeading(data: string, heading: string, line: string):
 }
 
 // ── snooze ────────────────────────────────────────────────────────────────────
-export async function snooze(app: App, p: Person, days: number): Promise<void> {
+export async function snooze(app: App, p: PersonView, days: number): Promise<void> {
   await app.fileManager.processFrontMatter(p.file, fm => {
     const due = addDays(today(), days);
     fm.next_contact   = toISO(due);
@@ -127,7 +125,7 @@ export async function snooze(app: App, p: Person, days: number): Promise<void> {
 }
 
 // ── pause ─────────────────────────────────────────────────────────────────────
-export async function setPaused(app: App, p: Person, paused: boolean): Promise<void> {
+export async function setPaused(app: App, p: PersonView, paused: boolean): Promise<void> {
   await app.fileManager.processFrontMatter(p.file, fm => {
     fm.status = paused ? "paused" : "active";
   });

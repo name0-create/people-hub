@@ -3,7 +3,7 @@
 
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type PeopleHubPlugin from "../main";
-import { TIERS, type Tier } from "../models/person";
+import { TIERS, type Tier } from "../models/person-view";
 
 export interface IntegrationSettings {
   enableMetaBind:  boolean;

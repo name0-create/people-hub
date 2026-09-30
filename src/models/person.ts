@@ -1,91 +1,124 @@
-// ─── Person model ─────────────────────────────────────────────────────────────
-// Pure data types — no Obsidian API dependencies.
+// ─── Person (canonical stored model) ──────────────────────────────────────────
+// Exactly what a person note's frontmatter contains. Property names are the
+// frontmatter keys, so this interface is the single source of truth for the
+// schema. Every key here MUST have a definition in SchemaRegistry.ts — the
+// registry is typed against this interface, so the build fails if one is missing.
+//
+// Not to be confused with PersonView (person-view.ts), the parsed runtime object
+// the UI works with (holds the TFile, computed due dates, scores…).
+//
+// Conventions
+//   • Dates are ISO strings: "YYYY-MM-DD" for dates, full ISO 8601 for timestamps.
+//   • Links to other notes are wikilinks: "[[Name]]".
+//   • Optional means "may be absent from the note", never null.
 
-import type { TFile } from "obsidian";
-
-export type Tier = "inner" | "close" | "extended" | "professional";
-export const TIERS: Tier[] = ["inner", "close", "extended", "professional"];
-
-export const CARNEGIE_LABELS: Record<string, string> = {
-  c1: "Don't criticize",
-  c2: "Give genuine appreciation",
-  c3: "Arouse eager want",
-  c4: "Become genuinely interested",
-  c5: "Smile / remember the name",
-  c6: "Talk in their interests",
-  c7: "Make them feel important",
-  c8: "Avoid arguments",
-  c9: "Admit quickly / save face",
-};
-
-export interface CarnegieScores {
-  c1: number; c2: number; c3: number; c4: number; c5: number;
-  c6: number; c7: number; c8: number; c9: number;
-  avg: number;
-  weakest: string;       // "c3"
-  weakestLabel: string;  // full label
-}
-
-export interface SocialLink { platform: string; label: string; handle: string; url: string; }
-export interface BirthDate  { month: number; day: number; year: number | null; }
-export interface BirthdayInfo { date: Date; age: number | null; days: number; }
-
-export interface TalkLog {
-  date: Date | null; where: string; note: string;
-  learned: string; next: string; presence: number; energy: number;
-}
-
-// ── Anniversary ───────────────────────────────────────────────────────────────
-export interface AnniversaryInfo {
-  date: Date;      // this year's occurrence
-  years: number | null;
-  days: number;    // days until (0 = today)
-  label: string;   // e.g. "3-year friendiversary", "wedding anniversary"
-}
+export const PERSON_ID_PREFIX = "PER" as const;
+export const PERSON_NOTE_TYPE = "person" as const;
+/** Bump when a property is renamed/removed/retyped, and add a migration. */
+export const PERSON_SCHEMA_VERSION = 1;
 
 export interface Person {
-  file: TFile;
-  name: string; fullName: string;
-  typePerson: string;
-  alsoIs: string;
-  tier: Tier;
-  active: boolean; paused: boolean; status: string;
-  company: string; role: string;
-  phone: string; email: string;
-  socials: SocialLink[];
-  location: string;
+  // ── System ────────────────────────────────────────────────────────────────
+  id: string;
+  id_prefix: typeof PERSON_ID_PREFIX;
+  schema_version: number;
 
-  // Birthday
-  birthdate: BirthDate | null;
-  birthday: BirthdayInfo | null;
+  created: string;        // ISO 8601 timestamp
+  created_date: string;   // YYYY-MM-DD (for date-only queries)
+  updated: string;        // ISO 8601 timestamp
 
-  // Anniversary (v0.2)
-  anniversaryRaw: string;
-  anniversary: AnniversaryInfo | null;
+  type: typeof PERSON_NOTE_TYPE;
 
-  // Reach-out
-  lastContact: Date | null;
-  nextContact: Date | null;
-  frequency: string;
-  sinceContact: number | null;   // days since last_contact
-  dueIn: number;                 // negative = overdue
-  needsReachOut: boolean;
+  // ── Identity ──────────────────────────────────────────────────────────────
+  title: string;          // note title
+  display_name: string;   // how the name is shown in the UI
+  name: string;           // full name
 
-  // Health
-  healthScore: number;
-  trustScore: number;
+  preferred_name?: string;
+  aliases?: string[];
 
-  // Carnegie
-  carnegie: CarnegieScores;
+  first_name?: string;
+  last_name?: string;
+  nickname?: string;
 
-  // Promises
-  promisesMade: number; promisesKept: number; promiseRatio: number | null;
+  favorite?: boolean;
 
-  // Context
-  wants: string; fears: string; interests: string;
-  theirStory: string;
-  skillCode: string;
-  talks: TalkLog[];
-  nextAction: string;
-  photo: string;
+  photo?: string;
+  gender?: string;
+
+  // ── Contact ───────────────────────────────────────────────────────────────
+  phone?: string;
+  email?: string;
+
+  instagram?: string;
+  linkedin?: string;
+  youtube?: string;
+  x_twitter?: string;
+
+  place_name?: string;
+  address?: string;
+  location?: string;
+
+  // ── Work ──────────────────────────────────────────────────────────────────
+  company?: string[];
+  role?: string;
+
+  // ── Organisation ──────────────────────────────────────────────────────────
+  category?: string[];
+  groups?: string[];
+
+  prm_tier?: string;
+  prm_paused?: boolean;
+
+  // ── Links ─────────────────────────────────────────────────────────────────
+  related_projects?: string[];
+  related_goals?: string[];
+  related_habits?: string[];
+  linked_ideas?: string[];
+  linked_people?: string[];
+
+  status?: string;
+
+  // ── Relationship ──────────────────────────────────────────────────────────
+  relationship_type?: string[];
+  relationship_status?: string;
+  relationship_direction?: string;
+  contactability?: string;
+  importance?: string;
+
+  cadence?: string;
+  first_encounter_date?: string;
+  last_contacted?: string;
+
+  next_encounter?: string;
+  next_encounter_place?: string;
+  next_encounter_purpose?: string;
+
+  times_met?: number;
+  met_through?: string;
+  met_location?: string;
+
+  // ── Dates ─────────────────────────────────────────────────────────────────
+  birthdate?: string;
+  anniversary?: string;
+
+  // ── Context ───────────────────────────────────────────────────────────────
+  interests?: string[];
+  current_focus?: string[];
+  how_i_can_help?: string[];
+  things_to_remember?: string;
+  conversation_topics?: string[];
+  open_loops?: string[];
+  promises?: string[];
+  wins?: string[];
+
+  tags?: string[];
 }
+
+/** Every valid frontmatter key on a person note. */
+export type PersonKey = keyof Person;
+
+/** Keys that must be present on every person note. */
+export type RequiredPersonKey = {
+  [K in PersonKey]-?: undefined extends Person[K] ? never : K;
+}[PersonKey];

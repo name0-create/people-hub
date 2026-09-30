@@ -1,4 +1,4 @@
-import type { BirthDate, BirthdayInfo } from "../models/person";
+import type { BirthDate, BirthdayInfo } from "../models/person-view";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 

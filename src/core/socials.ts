@@ -1,4 +1,4 @@
-import type { SocialLink } from "../models/person";
+import type { SocialLink } from "../models/person-view";
 
 type FM = Record<string, any>;
 
