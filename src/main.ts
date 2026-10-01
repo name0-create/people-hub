@@ -1,6 +1,6 @@
 // ─── People Hub — main plugin entry ──────────────────────────────────────────
 
-import { debounce, Editor, Notice, Plugin, TFile } from "obsidian";
+import { debounce, Editor, Notice, Plugin } from "obsidian";
 import { DEFAULT_SETTINGS, PeopleHubSettings, PeopleSettingTab } from "./core/settings";
 import { FolderService } from "./core/folder-service";
 import { PeopleIndex } from "./repository/PeopleIndex";
@@ -33,7 +33,8 @@ class PeopleHubPlugin extends Plugin {
     this.folders = new FolderService(this.app, () => this.settings);
     this.index    = new PeopleIndex(this.app, this.folders, () => this.settings);
     const store   = new MarkdownStore(this.app, this.folders);
-    const changed = () => this.refresh();   // invalidates the index, updates status bar + open views
+    // Repositories update the index for the one note they wrote; this just refreshes what's on screen.
+    const changed = () => this.scheduleRender();
     this.people       = new PersonRepository(this.folders, store, this.index, () => this.settings, changed);
     this.interactions = new InteractionRepository(store, changed);
     this.meetings     = new MeetingRepository(store, changed);
@@ -44,14 +45,15 @@ class PeopleHubPlugin extends Plugin {
 
     this.registerCommands();
     this.registerCodeBlock();
-    this.registerChangeEvents();
+    this.registerIndexEvents();
 
     this.statusEl = this.addStatusBarItem();
     this.statusEl.addClass("mod-clickable");
     this.statusEl.addEventListener("click", () => this.activateView("today"));
 
     this.app.workspace.onLayoutReady(() => {
-      this.refresh();
+      this.index.rebuild();            // initial scan: People folder → recognise → parse → index
+      this.renderNow();
       if (this.settings.startupNotice) this.startupNotice();
     });
   }
@@ -68,13 +70,22 @@ class PeopleHubPlugin extends Plugin {
   }
   async saveSettings() { await this.saveData(this.settings); this.refresh(); }
 
+  /** Full rebuild: throw the index away and re-scan (settings changed, "Refresh index" command). */
   refresh(notify = false) {
     this.index.invalidate();
+    this.renderNow();
+    if (notify) new Notice(`People Hub: ${this.index.all().length} people indexed`);
+  }
+
+  /** Re-draw the status bar and every open People Hub view from the current index. */
+  private renderNow() {
     this.updateStatusBar();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE))
       if (leaf.view instanceof PeopleView) leaf.view.render();
-    if (notify) new Notice(`People Hub: ${this.index.all().length} people indexed`);
   }
+
+  /** Coalesces bursts of index changes (e.g. a sync adding 30 notes) into one redraw. */
+  private scheduleRender = debounce(() => this.renderNow(), 150, true);
 
   private updateStatusBar() {
     if (!this.statusEl) return;
@@ -131,7 +142,7 @@ class PeopleHubPlugin extends Plugin {
 
   logFor(p: PersonView)       { new LogModal(this.app, this, p).open(); }
   carnegieFor(p: PersonView)  { new CarnegieModal(this.app, this, p).open(); }
-  quickLogFor(p: PersonView)  { new QuickLogSheet(this.app, this, p, () => this.refresh()).open(); }
+  quickLogFor(p: PersonView)  { new QuickLogSheet(this.app, this, p, () => this.scheduleRender()).open(); }
   openPerson(p: PersonView, newTab: boolean) {
     this.app.workspace.getLeaf(newTab ? "tab" : false).openFile(p.file);
   }
@@ -217,12 +228,16 @@ class PeopleHubPlugin extends Plugin {
     });
   }
 
-  private registerChangeEvents() {
-    const onChange = debounce(() => this.refresh(), 500, true);
-    this.registerEvent(this.app.metadataCache.on("changed", (f: TFile) => { if (this.index.isPersonFile(f)) onChange(); }));
-    this.registerEvent(this.app.metadataCache.on("deleted", () => onChange()));
-    this.registerEvent(this.app.vault.on("rename", () => onChange()));
-    this.registerInterval(window.setInterval(() => this.refresh(), 60 * 60 * 1000));
+  /**
+   * Keep the index live: note created/edited → metadata "changed", renamed/moved → vault "rename",
+   * deleted → vault "delete". Each updates only the affected person; views redraw after the change.
+   */
+  private registerIndexEvents() {
+    this.index.watch(ref => this.registerEvent(ref));
+    this.index.onChange(() => this.scheduleRender());
+    // Countdowns ("21d", due dates) are relative to today: redraw hourly; the index re-scans itself
+    // when it notices the calendar day changed.
+    this.registerInterval(window.setInterval(() => this.renderNow(), 60 * 60 * 1000));
   }
 }
 

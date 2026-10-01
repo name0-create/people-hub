@@ -1,5 +1,36 @@
 # People Hub — Changelog
 
+## Unreleased — Phase 4: People index
+
+The index is still a pure cache (never written, always rebuildable from the notes) but no longer
+re-scans the vault when one note changes.
+
+- **`models/PeopleIndexEntry.ts`** — the flat cached record: `path, id, name, display_name, photo, favorite,
+  relationship_type, company, role, status, birthday, last_contacted, next_encounter, cadence, importance, tags`.
+  Absent text → `""`, absent list → `[]`, absent date → `null`; wikilinks in `company` reduced to display text.
+  Also `IndexChange` (`rebuild | upsert | remove | rename`).
+- **`PeopleIndex`** keeps one record per note path holding both the entry and the `PersonView` the existing
+  tabs use (`all()` is unchanged). New reads: `entries()`, `get()`, `getEntry()`, `findById()`, `has()`, `size`,
+  `companies()`, `tags()`.
+- **Initial scan** (`rebuild()`, run at layout-ready; also lazy on first read). Recognition: `type: person` (the
+  configured value), or a `type/person` tag (list or string, `#` optional, nested `type/person/…` ok), or — for notes
+  with no `type` at all — living in the people folder. A different `type:` value excludes the note unless it also
+  carries the tag. Excluded folders are never indexed.
+- **Incremental updates** — `upsert(file)`, `rename(file, oldPath)`, `remove(path)`, `removeUnder(folder)`; each
+  touches one person. `watch()` wires them to Obsidian: metadata `changed` (covers created + modified, since
+  frontmatter isn't readable at vault `create`/`modify` time), vault `rename`, vault `delete`. A note whose
+  frontmatter didn't change (body-only edit, or the watcher repeating a repository write) is skipped silently.
+  A moved/renamed folder triggers a rebuild; a deleted folder removes everyone under it.
+- **`onChange(cb)`** notifies listeners with what changed. `main.ts` coalesces bursts (150 ms) into one redraw of
+  the status bar and open views, replacing the old "invalidate everything + redraw" on every edit.
+- **`PersonRepository`** now updates only the note it wrote (`create/update/rename/archive/restore/delete`) instead
+  of invalidating the whole index.
+- **Full rebuilds** remain for: settings changes, the *Refresh index* command, and the calendar day changing
+  (countdowns/due dates are relative to today; the hourly tick redraws and the index re-scans itself).
+- **Tests**: `tests/index.test.js` (19) — recognition, entry shape, incremental add/edit/rename/move/delete, folder
+  rename/delete, no re-scan, no duplicate notifications, repository integration. The fake Obsidian now fires vault
+  events like the real one.
+
 ## Unreleased — Phase 3: Markdown repository layer
 
 - **`repository/MarkdownStore.ts`** — the only module that calls vault/file-manager write APIs.

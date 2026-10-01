@@ -8,7 +8,7 @@
 // Update flow:
 //   validate patch → processFrontMatter (patch, title/name sync, `updated`) →
 //   [rename file via fileManager.renameFile] → wait for metadata cache →
-//   invalidate PeopleIndex → onChanged (plugin refresh).
+//   update ONLY the affected person in PeopleIndex → onChanged (plugin refreshes views).
 //
 // Callers never see a TFile mutation API: everything goes through MarkdownStore.
 
@@ -134,7 +134,7 @@ export class PersonRepository {
     if (opts.extension) Object.assign(fm, clone(opts.extension));
 
     const file = await this.store.create(folderKey, base, opts.body ?? `# ${name}\n`, fm);
-    this.changed();
+    this.touched(file);
     return this.record(file, fm);
   }
 
@@ -169,8 +169,10 @@ export class PersonRepository {
         if (opts.extension) this.runExtension(fm, opts.extension);
       }, { onChange: touch });
 
+      const oldPath = file.path;
       if (renameTo) await this.store.rename(file, renameTo);
-      if (result.changed || renameTo) this.changed();
+      if (renameTo) this.moved(file, oldPath);
+      else if (result.changed) this.touched(file);
       return this.record(file, result.after);
     });
   }
@@ -186,9 +188,11 @@ export class PersonRepository {
     const file = this.requirePerson(path);
     return this.store.exclusive(file.path, async () => {
       const result = await this.store.update(file, fm => { fm.status = "archived"; }, { onChange: touch });
+      const oldPath = file.path;
       let moved = false;
       if (!this.folders.contains("archive", file.path)) { await this.store.move(file, "archive"); moved = true; }
-      if (result.changed || moved) this.changed();
+      if (moved) this.moved(file, oldPath);
+      else if (result.changed) this.touched(file);
       return this.record(file, result.after);
     });
   }
@@ -200,9 +204,11 @@ export class PersonRepository {
       const result = await this.store.update(file, fm => {
         if (str(fm.status).toLowerCase() === "archived") fm.status = "active";
       }, { onChange: touch });
+      const oldPath = file.path;
       let moved = false;
       if (this.folders.contains("archive", file.path)) { await this.store.move(file, "people"); moved = true; }
-      if (result.changed || moved) this.changed();
+      if (moved) this.moved(file, oldPath);
+      else if (result.changed) this.touched(file);
       return this.record(file, result.after);
     });
   }
@@ -211,8 +217,9 @@ export class PersonRepository {
   async deletePerson(path: string): Promise<void> {
     const file = this.requirePerson(path);
     await this.store.exclusive(file.path, async () => {
+      const gone = file.path;
       await this.store.trash(file);
-      this.changed();
+      this.removed(gone);
     });
   }
 
@@ -224,10 +231,12 @@ export class PersonRepository {
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
-  private changed() {
-    this.index.invalidate();
-    this.onChanged();
-  }
+  // Each write tells the index about exactly the note it touched (no vault re-scan), then notifies the
+  // plugin so views refresh. The metadata-cache watcher reports the same change again; the index
+  // ignores it because the note's properties are already what it has cached.
+  private touched(file: TFile)                  { this.index.upsert(file);          this.onChanged(); }
+  private moved(file: TFile, oldPath: string)   { this.index.rename(file, oldPath); this.onChanged(); }
+  private removed(path: string)                 { this.index.remove(path);          this.onChanged(); }
 
   private requirePerson(path: string): TFile {
     const file = this.store.getFile(path);
