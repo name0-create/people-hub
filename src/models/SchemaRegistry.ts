@@ -152,7 +152,7 @@ const PERSON_SCHEMA: PersonSchema = {
   location:       text("Location", "place", { filterable: true, description: "City / region." }),
 
   // Work
-  company:        list("Company", "work"),
+  company:        list("Company", "work", { legacyKeys: ["biz"] }),
   role:           text("Role", "work", { legacyKeys: ["job_title"], filterable: true }),
 
   // Organisation

@@ -1,35 +1,50 @@
 # People Hub — Changelog
 
+## Unreleased — UI refactor: People directory (main window) + Birthdays sidebar
+
+- **Main window — People directory** (`views/directory-view.ts`, command "People Hub: Open People directory",
+  second ribbon icon): header with "N people in <folder>" and **Add person**, search, sort (name ↑/↓, last contact
+  newest/oldest, next encounter, favourites first), company and tag filters, "N of M" count, and a responsive card
+  grid (photo or initials tile, name, company/role, "Last contact", favourite star). Click / Ctrl-click / middle-click /
+  Enter open the note; right-click gives Open, Open in new tab, Log talk, Quick log. Built from `PeopleIndex` entries,
+  updates live (search text and focus survive), refresh button in the tab header. Archived people are hidden; the
+  plugin's own `type/` and `status/` tags are hidden from the tag filter.
+- **Sidebar — Birthdays tab** (`views/birthdays-panel.ts`): stat tiles (Total · Today · 7d · 30d), **Next 30 Days** and
+  **Later Birthdays** cards (zodiac + lunar line, birthday, next date, "21d", "21 years old"), and a two-month
+  **Birthday Calendar** with Prev / Today / Next (🎂 birthdays and 💍 anniversaries as chips; today outlined).
+  Anniversary and "no birthday on file" lists are kept below.
+- **Zodiac & lunar date** (`core/astro.ts`): Chinese zodiac + lunar date from the platform's Chinese calendar
+  (correct around lunar new year, leap months labelled), western sign from month/day (works for year-less
+  birthdays). New setting **Zodiac & lunar date** (default on).
+- Sidebar rows and section headings share the new card style; tier colour is now an accent stripe.
+- Photos: `photo` may be a URL, `[[wikilink]]`, `![[embed]]`, markdown image or vault path (`core/photo.ts`).
+- Styles use Obsidian theme variables (dark/light/any theme), mobile layout, and selectors specific enough to
+  beat Obsidian's own input/select rules.
+- Tests: `sh tests/run-all.sh` builds and runs everything (repository, index, UI logic, and a headless-Chrome render of
+  the real views with DOM assertions + screenshots in `tests/visual/out/`). Fixed a bug in the test setup shipped with
+  Phases 3–4 (two copies of the fake `TFile` made `instanceof` fail outside my scratch directory).
+
 ## Unreleased — Phase 4: People index
 
-The index is still a pure cache (never written, always rebuildable from the notes) but no longer
-re-scans the vault when one note changes.
-
-- **`models/PeopleIndexEntry.ts`** — the flat cached record: `path, id, name, display_name, photo, favorite,
-  relationship_type, company, role, status, birthday, last_contacted, next_encounter, cadence, importance, tags`.
-  Absent text → `""`, absent list → `[]`, absent date → `null`; wikilinks in `company` reduced to display text.
-  Also `IndexChange` (`rebuild | upsert | remove | rename`).
-- **`PeopleIndex`** keeps one record per note path holding both the entry and the `PersonView` the existing
-  tabs use (`all()` is unchanged). New reads: `entries()`, `get()`, `getEntry()`, `findById()`, `has()`, `size`,
-  `companies()`, `tags()`.
-- **Initial scan** (`rebuild()`, run at layout-ready; also lazy on first read). Recognition: `type: person` (the
-  configured value), or a `type/person` tag (list or string, `#` optional, nested `type/person/…` ok), or — for notes
-  with no `type` at all — living in the people folder. A different `type:` value excludes the note unless it also
-  carries the tag. Excluded folders are never indexed.
-- **Incremental updates** — `upsert(file)`, `rename(file, oldPath)`, `remove(path)`, `removeUnder(folder)`; each
-  touches one person. `watch()` wires them to Obsidian: metadata `changed` (covers created + modified, since
-  frontmatter isn't readable at vault `create`/`modify` time), vault `rename`, vault `delete`. A note whose
-  frontmatter didn't change (body-only edit, or the watcher repeating a repository write) is skipped silently.
-  A moved/renamed folder triggers a rebuild; a deleted folder removes everyone under it.
-- **`onChange(cb)`** notifies listeners with what changed. `main.ts` coalesces bursts (150 ms) into one redraw of
-  the status bar and open views, replacing the old "invalidate everything + redraw" on every edit.
-- **`PersonRepository`** now updates only the note it wrote (`create/update/rename/archive/restore/delete`) instead
-  of invalidating the whole index.
-- **Full rebuilds** remain for: settings changes, the *Refresh index* command, and the calendar day changing
-  (countdowns/due dates are relative to today; the hourly tick redraws and the index re-scans itself).
-- **Tests**: `tests/index.test.js` (19) — recognition, entry shape, incremental add/edit/rename/move/delete, folder
-  rename/delete, no re-scan, no duplicate notifications, repository integration. The fake Obsidian now fires vault
-  events like the real one.
+- **`PeopleIndex` is now incremental.** A cache derived only from Obsidian's metadata cache; never persisted,
+  never written to, rebuildable at any time. Per person it keeps a lean **`IndexEntry`** (path, id, name,
+  display_name, photo, favorite, relationship_type, company, role, status, birthday, last_contacted,
+  next_encounter, cadence, importance, tags) plus the v0.2 `PersonView` projection, parsed in one pass.
+- **Events:** `bind()` listens to metadataCache `changed` (created + modified, once frontmatter is parsed),
+  vault `rename` (folder move → rescan) and `delete`; only the affected note is re-parsed.
+- **Batched notifications:** `index.onChange(fn)` gets one `{paths, full}` per burst, and only when something
+  a view could show actually changed (editing a note body no longer re-renders views).
+- **Recognition** is one pure function (`core/recognition.ts`): `type: person`, or a `type/person` tag
+  (list or string), or — with the new **Detect by folder** setting (default on) — frontmatter without a `type`
+  inside the People folder. Excluded folders always win.
+- **`models/PersonNormalizer.ts`**: the single frontmatter→`Person` interpreter, shared by `PersonRepository`
+  and `PeopleIndex`. **`models/IndexEntry.ts`**: the entry shape.
+- New index API: `entries()`, `entry(path)`, `entryById(id)`, `view(path)`, `size`, `search(q)`,
+  `duplicateIds()`, `refreshFile`, `removePath`, `rebuild`, `rolloverIfNeeded`, `flush`, `stats`.
+- `PersonRepository` refreshes just the affected entry after each write (no more whole-index invalidation).
+- Plugin: initial scan at layout-ready; the hourly full rebuild is replaced by a 15-minute day-rollover check
+  (date-based fields such as "due in N days" are recomputed when the day changes).
+- Fix: registry now lists `biz` as a legacy key of `company` (the old index already read it).
 
 ## Unreleased — Phase 3: Markdown repository layer
 

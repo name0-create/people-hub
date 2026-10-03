@@ -28,6 +28,8 @@ export interface PeopleHubSettings {
   // ── Schema ──
   personType:    string;
   excludeFolders: string;
+  /** Also treat notes without a `type` as people when they live in the People folder. */
+  detectByFolder: boolean;
 
   // ── Creation ──
   personTemplateMode: "builtin" | "templater";
@@ -44,6 +46,8 @@ export interface PeopleHubSettings {
   // ── Logging ──
   logHeading:   string;
   weekStartsOn: 0 | 1;
+  /** Show the "Rooster · Libra · Lunar Sep 18th" line on birthday cards. */
+  showZodiac: boolean;
 
   // ── Mobile (v0.2) ──
   mobileSwipeLog: boolean;
@@ -71,6 +75,7 @@ export const DEFAULT_SETTINGS: PeopleHubSettings = {
 
   personType:    "person",
   excludeFolders: "Templates,99 - SYSTEM",
+  detectByFolder: true,
 
   personTemplateMode: "builtin",
   personTemplatePath: "99 - SYSTEM/Templates/Template - Person - Full.md",
@@ -83,6 +88,7 @@ export const DEFAULT_SETTINGS: PeopleHubSettings = {
 
   logHeading:   "## Talks Log",
   weekStartsOn: 1,
+  showZodiac:   true,
 
   mobileSwipeLog: true,
 
@@ -137,8 +143,11 @@ export class PeopleSettingTab extends PluginSettingTab {
     // ── Schema ───────────────────────────────────────────────────────────
     el.createEl("h3", { text: "🗂 Schema" });
     new Setting(el).setName("Person type value")
-      .setDesc("Notes with `type: <this>` anywhere in vault are indexed as people.")
+      .setDesc("Recognised as a person: `type: <this>`, or a `type/<this>` tag, anywhere in the vault.")
       .addText(t => t.setValue(s.personType).onChange(async v => { s.personType = v.trim() || "person"; await save(); }));
+    new Setting(el).setName("Detect by folder")
+      .setDesc("Also treat notes with frontmatter but no `type` in the People folder as people.")
+      .addToggle(t => t.setValue(s.detectByFolder).onChange(async v => { s.detectByFolder = v; await save(); }));
 
     // ── Cadence ──────────────────────────────────────────────────────────
     el.createEl("h3", { text: "⏱ Reach-out cadence (days per tier)" });
@@ -165,6 +174,9 @@ export class PeopleSettingTab extends PluginSettingTab {
       .addText(t => t.setValue(s.logHeading).onChange(async v => { s.logHeading = v.trim() || "## Talks Log"; await save(); }));
     new Setting(el).setName("Week starts on Monday")
       .addToggle(t => t.setValue(s.weekStartsOn === 1).onChange(async v => { s.weekStartsOn = v ? 1 : 0; await save(); }));
+    new Setting(el).setName("Zodiac & lunar date")
+      .setDesc("Show Chinese zodiac, western sign and lunar date on birthday cards.")
+      .addToggle(t => t.setValue(s.showZodiac).onChange(async v => { s.showZodiac = v; await save(); }));
 
     // ── Mobile ───────────────────────────────────────────────────────────
     el.createEl("h3", { text: "📱 Mobile" });

@@ -13,7 +13,7 @@ class Plain { constructor() {} }
 class FakeApp {
   constructor({ cacheDelay = 8 } = {}) {
     this.entries = new Map(); this.folders = new Set(); this.cache = new Map();
-    this.listeners = []; this.vaultListeners = []; this.log = []; this.cacheDelay = cacheDelay; this.failNextFM = null; this.badYaml = new Set();
+    this.listeners = {}; this.vaultL = {}; this.log = []; this.cacheDelay = cacheDelay; this.failNextFM = null; this.badYaml = new Set();
     const app = this;
     this.vault = {
       getAbstractFileByPath(p) {
@@ -22,6 +22,7 @@ class FakeApp {
         if (app.folders.has(p)) return new TFolder(p, [...app.entries.keys()].filter(k => k.startsWith(p + "/") && !k.slice(p.length + 1).includes("/")).map(k => app.entries.get(k).file));
         return null;
       },
+      getResourcePath() { return ""; },
       getMarkdownFiles() { return [...app.entries.values()].map(e => e.file); },
       async create(path, data) {
         path = normalizePath(path);
@@ -39,7 +40,7 @@ class FakeApp {
         const out = fn(data); e.body = out.slice(out.indexOf("\n---\n", 3) + 5);
         app.log.push({ op: "process", path: file.path }); return out;
       },
-      on(name, cb) { const ref = { name, cb }; app.vaultListeners.push(ref); return ref; },
+      on(name, cb) { (app.vaultL[name] ||= []).push(cb); return {}; },
     };
     this.fileManager = {
       async processFrontMatter(file, fn) {
@@ -47,7 +48,7 @@ class FakeApp {
         if (app.badYaml.has(file.path)) throw new Error("YAMLParseError");
         if (app.failNextFM) { const m = app.failNextFM; app.failNextFM = null; throw new Error(m); }
         const work = clone(e.fm); fn(work);          // atomic: nothing is committed if fn throws
-        e.fm = work; app.log.push({ op: "processFrontMatter", path: file.path }); app.schedule(file.path);
+        e.fm = work; app.log.push({ op: "processFrontMatter", path: file.path }); app.emitVault("modify", file); app.schedule(file.path);
       },
       async renameFile(file, newPath) {
         newPath = normalizePath(newPath);
@@ -59,50 +60,42 @@ class FakeApp {
         if (app.cache.has(old)) { app.cache.set(newPath, app.cache.get(old)); app.cache.delete(old); }
         app.log.push({ op: "rename", from: old, to: newPath }); app.emitVault("rename", file, old);
       },
-      async trashFile(file) { app.entries.delete(file.path); app.cache.delete(file.path); app.log.push({ op: "trash", path: file.path }); app.emitVault("delete", file); },
+      async trashFile(file) { app.entries.delete(file.path); app.cache.delete(file.path); app.log.push({ op: "trash", path: file.path }); app.emitVault("delete", file); app.emitCache("deleted", file); },
     };
     this.metadataCache = {
-      getFileCache(file) { const c = app.cache.get(file.path); return c ? { frontmatter: { ...clone(c), position: {} } } : null; },
-      on(name, cb) { app.listeners.push(cb); cb.__name = name; return { name, cb }; },
-      off(name, cb) { app.listeners = app.listeners.filter(l => l !== cb); },
+      getFirstLinkpathDest() { return null; },
+      getFileCache(file) { const c = app.cache.get(file.path); return c && Object.keys(c).length ? { frontmatter: { ...clone(c), position: {} } } : (c ? {} : null); },
+      on(name, cb) { (app.listeners[name] ||= []).push(cb); return {}; },
+      off(name, cb) { app.listeners[name] = (app.listeners[name] || []).filter(l => l !== cb); },
     };
   }
   schedule(path) {
     setTimeout(() => {
       const e = this.entries.get(path); if (!e) return;
-      this.cache.set(path, clone(e.fm)); for (const l of [...this.listeners]) if (l.__name === "changed") l(e.file);
+      this.cache.set(path, clone(e.fm)); this.emitCache("changed", e.file);
     }, this.cacheDelay);
+  }
+  emitVault(name, ...a) { for (const l of [...(this.vaultL[name] || [])]) l(...a); }
+  emitCache(name, ...a) { for (const l of [...(this.listeners[name] || [])]) l(...a); }
+  /** Simulate an edit made outside the plugin (user typing, sync): frontmatter and/or body. */
+  externalEdit(path, fmFn, body) {
+    const e = this.entries.get(path); if (fmFn) fmFn(e.fm); if (body !== undefined) e.body = body;
+    this.emitVault("modify", e.file); this.schedule(path);
+  }
+  /** Move a folder and everything in it; emits vault rename for the folder (and each file, like Obsidian). */
+  moveFolder(oldDir, newDir) {
+    const { TFolder } = module.exports;
+    this.folders.delete(oldDir); this.folders.add(newDir);
+    for (const [k, e] of [...this.entries]) if (k.startsWith(oldDir + "/")) {
+      const nk = newDir + k.slice(oldDir.length); this.entries.delete(k); e.file.path = nk; this.entries.set(nk, e);
+      if (this.cache.has(k)) { this.cache.set(nk, this.cache.get(k)); this.cache.delete(k); }
+    }
+    this.emitVault("rename", new TFolder(newDir), oldDir);
   }
   seed(path, fm, body) {
     path = normalizePath(path); const dir = path.slice(0, path.lastIndexOf("/"));
     for (let i = 0, cur = ""; i < dir.split("/").length; i++) { cur = dir.split("/").slice(0, i + 1).join("/"); this.folders.add(cur); }
     const file = new TFile(path); this.entries.set(path, { file, fm, body }); this.cache.set(path, clone(fm)); return file;
-  }
-  emitVault(name, ...args) { for (const r of [...this.vaultListeners]) if (r.name === name) r.cb(...args); }
-  /** A note the user (or a sync) adds: Obsidian fires vault "create" first; the metadata cache catches up later. */
-  addNote(path, fm, body = "") {
-    path = normalizePath(path); const dir = path.slice(0, path.lastIndexOf("/"));
-    for (let i = 0; i < dir.split("/").length; i++) this.folders.add(dir.split("/").slice(0, i + 1).join("/"));
-    const file = new TFile(path); this.entries.set(path, { file, fm, body });
-    this.emitVault("create", file); this.schedule(path); return file;
-  }
-  /** The user edits properties: cache catches up later and fires metadata "changed". */
-  editFm(path, mutate) { const e = this.entries.get(path); mutate(e.fm); this.schedule(path); }
-  /** Rename/move a whole folder: children keep their TFile objects; events fire for the folder, then each child. */
-  renameFolder(oldPath, newPath) {
-    oldPath = normalizePath(oldPath); newPath = normalizePath(newPath);
-    const moved = [...this.entries.keys()].filter(k => k.startsWith(oldPath + "/"));
-    this.folders.add(newPath); this.folders.delete(oldPath);
-    const folder = new TFolder(newPath);
-    const pairs = moved.map(k => { const e = this.entries.get(k); const nk = newPath + k.slice(oldPath.length); this.entries.delete(k); e.file.path = nk; this.entries.set(nk, e);
-      if (this.cache.has(k)) { this.cache.set(nk, this.cache.get(k)); this.cache.delete(k); } return [e.file, k]; });
-    this.emitVault("rename", folder, oldPath);
-    for (const [f, k] of pairs) this.emitVault("rename", f, k);
-  }
-  deleteFolder(path) {
-    path = normalizePath(path);
-    for (const k of [...this.entries.keys()]) if (k.startsWith(path + "/")) { this.entries.delete(k); this.cache.delete(k); }
-    this.folders.delete(path); this.emitVault("delete", new TFolder(path));
   }
   body(path) { return this.entries.get(path).body; }
   fm(path) { return this.entries.get(path).fm; }

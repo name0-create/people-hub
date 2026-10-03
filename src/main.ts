@@ -1,6 +1,6 @@
 // ─── People Hub — main plugin entry ──────────────────────────────────────────
 
-import { debounce, Editor, Notice, Plugin } from "obsidian";
+import { Editor, Notice, Plugin } from "obsidian";
 import { DEFAULT_SETTINGS, PeopleHubSettings, PeopleSettingTab } from "./core/settings";
 import { FolderService } from "./core/folder-service";
 import { PeopleIndex } from "./repository/PeopleIndex";
@@ -13,6 +13,7 @@ import { runQuickAddMacro } from "./integrations/quickadd";
 import { CarnegieModal, LogModal, NewPersonModal, PersonPicker } from "./views/modals";
 import { QuickLogSheet } from "./views/quick-log-sheet";
 import { PeopleView, Tab, VIEW_TYPE } from "./views/sidebar-view";
+import { DIRECTORY_VIEW_TYPE, DirectoryView } from "./views/directory-view";
 import { anniversaryMeta, birthdayMeta, reachOutMeta } from "./views/ui";
 import type { PersonView } from "./models/person-view";
 
@@ -27,38 +28,45 @@ class PeopleHubPlugin extends Plugin {
   meetings!: MeetingRepository;
   pendingTab: Tab | null = null;
   private statusEl: HTMLElement | null = null;
+  private unsubIndex: (() => void) | null = null;
 
   async onload() {
     await this.loadSettings();
     this.folders = new FolderService(this.app, () => this.settings);
     this.index    = new PeopleIndex(this.app, this.folders, () => this.settings);
     const store   = new MarkdownStore(this.app, this.folders);
-    // Repositories update the index for the one note they wrote; this just refreshes what's on screen.
-    const changed = () => this.scheduleRender();
-    this.people       = new PersonRepository(this.folders, store, this.index, () => this.settings, changed);
-    this.interactions = new InteractionRepository(store, changed);
-    this.meetings     = new MeetingRepository(store, changed);
+    // Person writes refresh their own index entry; the index then notifies (batched) → renderViews.
+    this.people       = new PersonRepository(this.folders, store, this.index, () => this.settings);
+    this.interactions = new InteractionRepository(store, () => this.renderViews());
+    this.meetings     = new MeetingRepository(store, () => this.renderViews());
+    this.unsubIndex   = this.index.onChange(() => this.renderViews());
+    this.index.bind(ref => this.registerEvent(ref));   // incremental updates: changed / rename / delete
 
     this.registerView(VIEW_TYPE, leaf => new PeopleView(leaf, this));
+    this.registerView(DIRECTORY_VIEW_TYPE, leaf => new DirectoryView(leaf, this));
     this.addRibbonIcon("users", "Open People Hub", () => this.activateView());
+    this.addRibbonIcon("contact", "Open People directory", () => this.openDirectory());
     this.addSettingTab(new PeopleSettingTab(this.app, this) as any);
 
     this.registerCommands();
     this.registerCodeBlock();
-    this.registerIndexEvents();
+    this.registerDayRollover();
 
     this.statusEl = this.addStatusBarItem();
     this.statusEl.addClass("mod-clickable");
     this.statusEl.addEventListener("click", () => this.activateView("today"));
 
     this.app.workspace.onLayoutReady(() => {
-      this.index.rebuild();            // initial scan: People folder → recognise → parse → index
-      this.renderNow();
+      this.refresh();                       // initial scan
       if (this.settings.startupNotice) this.startupNotice();
     });
   }
 
-  onunload() { this.app.workspace.detachLeavesOfType(VIEW_TYPE); }
+  onunload() {
+    this.unsubIndex?.();
+    this.app.workspace.detachLeavesOfType(VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DIRECTORY_VIEW_TYPE);
+  }
 
   async loadSettings() {
     const saved = ((await this.loadData()) ?? {}) as Partial<PeopleHubSettings>;
@@ -70,22 +78,21 @@ class PeopleHubPlugin extends Plugin {
   }
   async saveSettings() { await this.saveData(this.settings); this.refresh(); }
 
-  /** Full rebuild: throw the index away and re-scan (settings changed, "Refresh index" command). */
+  /** Full rescan (startup, settings change, refresh command). Day-to-day edits update the index incrementally. */
   refresh(notify = false) {
-    this.index.invalidate();
-    this.renderNow();
-    if (notify) new Notice(`People Hub: ${this.index.all().length} people indexed`);
+    this.index.rebuild();
+    this.index.flush();                     // → renderViews via the index listener
+    if (notify) new Notice(`People Hub: ${this.index.size} people indexed`);
   }
 
-  /** Re-draw the status bar and every open People Hub view from the current index. */
-  private renderNow() {
+  /** Update the status bar and re-render open People Hub views. */
+  private renderViews() {
     this.updateStatusBar();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE))
       if (leaf.view instanceof PeopleView) leaf.view.render();
+    for (const leaf of this.app.workspace.getLeavesOfType(DIRECTORY_VIEW_TYPE))
+      if (leaf.view instanceof DirectoryView) leaf.view.update();
   }
-
-  /** Coalesces bursts of index changes (e.g. a sync adding 30 notes) into one redraw. */
-  private scheduleRender = debounce(() => this.renderNow(), 150, true);
 
   private updateStatusBar() {
     if (!this.statusEl) return;
@@ -128,6 +135,14 @@ class PeopleHubPlugin extends Plugin {
     if (tab && leaf.view instanceof PeopleView) leaf.view.setTab(tab);
   }
 
+  /** Open (or focus) the full-page People directory in the main area. */
+  async openDirectory() {
+    const existing = this.app.workspace.getLeavesOfType(DIRECTORY_VIEW_TYPE)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: DIRECTORY_VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+
   async newPerson() {
     if (this.settings.integrations.enableQuickAdd) {
       const ok = await runQuickAddMacro(this.app, this.settings.quickAddMacroName);
@@ -142,13 +157,14 @@ class PeopleHubPlugin extends Plugin {
 
   logFor(p: PersonView)       { new LogModal(this.app, this, p).open(); }
   carnegieFor(p: PersonView)  { new CarnegieModal(this.app, this, p).open(); }
-  quickLogFor(p: PersonView)  { new QuickLogSheet(this.app, this, p, () => this.scheduleRender()).open(); }
+  quickLogFor(p: PersonView)  { new QuickLogSheet(this.app, this, p, () => this.index.flush()).open(); }
   openPerson(p: PersonView, newTab: boolean) {
     this.app.workspace.getLeaf(newTab ? "tab" : false).openFile(p.file);
   }
 
   private registerCommands() {
     this.addCommand({ id: "open-hub",      name: "Open People Hub",               callback: () => this.activateView() });
+    this.addCommand({ id: "open-directory", name: "People Hub: Open People directory", callback: () => this.openDirectory() });
     this.addCommand({ id: "open-today",    name: "People Hub: Today",             callback: () => this.activateView("today") });
     this.addCommand({ id: "open-birthday", name: "People Hub: Birthday calendar", callback: () => this.activateView("birthdays") });
     this.addCommand({ id: "open-carnegie", name: "People Hub: Carnegie scores",   callback: () => this.activateView("carnegie") });
@@ -228,16 +244,11 @@ class PeopleHubPlugin extends Plugin {
     });
   }
 
-  /**
-   * Keep the index live: note created/edited → metadata "changed", renamed/moved → vault "rename",
-   * deleted → vault "delete". Each updates only the affected person; views redraw after the change.
-   */
-  private registerIndexEvents() {
-    this.index.watch(ref => this.registerEvent(ref));
-    this.index.onChange(() => this.scheduleRender());
-    // Countdowns ("21d", due dates) are relative to today: redraw hourly; the index re-scans itself
-    // when it notices the calendar day changed.
-    this.registerInterval(window.setInterval(() => this.renderNow(), 60 * 60 * 1000));
+  /** Dates like "due in 3 days" change at midnight without any file changing. */
+  private registerDayRollover() {
+    this.registerInterval(window.setInterval(() => {
+      if (this.index.rolloverIfNeeded()) this.index.flush();
+    }, 15 * 60 * 1000));
   }
 }
 

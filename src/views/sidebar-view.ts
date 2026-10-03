@@ -9,6 +9,7 @@ import {
   reachOutMeta, relDays, renderPersonRow,
 } from "./ui";
 import { SwipeHandler } from "./quick-log-sheet";
+import { renderBirthdaysPanel } from "./birthdays-panel";
 
 export const VIEW_TYPE = "people-hub-view";
 export type Tab = "today" | "people" | "birthdays" | "carnegie";
@@ -208,101 +209,26 @@ export class PeopleView extends ItemView {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // BIRTHDAYS TAB
+  // BIRTHDAYS TAB  (see birthdays-panel.ts)
   // ─────────────────────────────────────────────────────────────────────────
   private renderBirthdays(body: HTMLElement) {
-    const idx = this.plugin.index;
-    const s   = this.plugin.settings;
-
-    // Calendar nav
-    const nav   = body.createDiv({ cls: "ph-calnav" });
-    const shift = (d: number) => {
-      const dt = new Date(this.calYear, this.calMonth + d, 1);
-      this.calYear = dt.getFullYear();
-      this.calMonth = dt.getMonth();
-      this.render(true);
-    };
-    nav.createEl("button", { text: "‹", cls: "ph-btn" }).addEventListener("click", () => shift(-1));
-    nav.createSpan({
-      text: new Date(this.calYear, this.calMonth, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }),
-      cls: "ph-calttl",
+    const view = this;
+    renderBirthdaysPanel(this.plugin, body, {
+      year: this.calYear,
+      month: this.calMonth,
+      shift(d) {
+        const dt = new Date(view.calYear, view.calMonth + d, 1);
+        view.calYear = dt.getFullYear();
+        view.calMonth = dt.getMonth();
+        view.render(true);
+      },
+      reset() {
+        const n = today();
+        view.calYear = n.getFullYear();
+        view.calMonth = n.getMonth();
+        view.render(true);
+      },
     });
-    nav.createEl("button", { text: "›", cls: "ph-btn" }).addEventListener("click", () => shift(1));
-    nav.createEl("button", { text: "Today", cls: "ph-btn" }).addEventListener("click", () => {
-      const n = today(); this.calYear = n.getFullYear(); this.calMonth = n.getMonth(); this.render(true);
-    });
-
-    // Birthday calendar
-    body.createEl("p", { text: "🎂 Birthdays", cls: "ph-cal-label" });
-    this.renderCalGrid(body, idx.birthdaysInMonth(this.calYear, this.calMonth));
-
-    // Anniversary calendar on same view
-    const annMap = idx.anniversariesInMonth(this.calYear, this.calMonth);
-    if (annMap.size > 0) {
-      body.createEl("p", { text: "💍 Anniversaries", cls: "ph-cal-label" });
-      this.renderCalGrid(body, annMap, "#a855f7");
-    }
-
-    // Lists
-    const bUp = idx.upcomingBirthdays(60);
-    this.section(body, "🎂 Next 60 days", bUp.length,
-      l => bUp.forEach(p => renderPersonRow(this.plugin, l, p, birthdayMeta(p), false)),
-      "None.",
-    );
-    const aUp = idx.upcomingAnniversaries(60);
-    if (aUp.length) {
-      this.section(body, "💍 Anniversaries · 60 days", aUp.length,
-        l => aUp.forEach(p => renderPersonRow(this.plugin, l, p, anniversaryMeta(p), false)),
-        "",
-      );
-    }
-    const bMiss = idx.missingBirthdays();
-    this.section(body, "No birthday on file", bMiss.length,
-      l => bMiss.forEach(p => renderPersonRow(this.plugin, l, p, p.typePerson, false)),
-      "Everyone has one. 👏",
-    );
-    const aMiss = idx.missingAnniversaries();
-    if (aMiss.length) {
-      this.section(body, "No anniversary on file", aMiss.length,
-        l => aMiss.forEach(p => renderPersonRow(this.plugin, l, p, p.typePerson, false)),
-        "",
-      );
-    }
-  }
-
-  private renderCalGrid(body: HTMLElement, map: Map<number, PersonView[]>, chipColor?: string) {
-    const s      = this.plugin.settings;
-    const grid   = body.createDiv({ cls: "ph-cal" });
-    const names  = ["S","M","T","W","T","F","S"];
-    for (let i = 0; i < 7; i++)
-      grid.createDiv({ text: names[(i + s.weekStartsOn) % 7], cls: "ph-calhd" });
-
-    const first  = new Date(this.calYear, this.calMonth, 1);
-    const offset = (first.getDay() - s.weekStartsOn + 7) % 7;
-    const dim    = new Date(this.calYear, this.calMonth + 1, 0).getDate();
-    const total  = Math.ceil((offset + dim) / 7) * 7;
-    const t      = today();
-
-    for (let i = 0; i < total; i++) {
-      const day  = i - offset + 1;
-      const cell = grid.createDiv({ cls: "ph-cell" });
-      if (day < 1 || day > dim) { cell.addClass("is-out"); continue; }
-      if (t.getFullYear() === this.calYear && t.getMonth() === this.calMonth && t.getDate() === day)
-        cell.addClass("is-today");
-      cell.createDiv({ text: String(day), cls: "ph-daynum" });
-      for (const p of map.get(day) ?? []) {
-        const chip = cell.createEl("a", {
-          text: p.name.split(" ")[0],
-          cls: "ph-chip",
-          attr: { "aria-label": p.name },
-        });
-        if (chipColor) chip.style.background = chipColor;
-        chip.addEventListener("click", e => {
-          e.preventDefault();
-          this.plugin.openPerson(p, e.ctrlKey || e.metaKey);
-        });
-      }
-    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

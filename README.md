@@ -38,7 +38,7 @@ src/
 ├── models/
 │   └── person.ts           # Pure types: Person, CarnegieScores, AnniversaryInfo …
 ├── repository/
-│   ├── PeopleIndex.ts        # PeopleIndex — in-memory cache + all list queries (Phase 4)
+│   ├── person-repository.ts  # PersonRepository — index + all queries
 │   └── person-actions.ts     # All write operations
 ├── views/
 │   ├── sidebar-view.ts     # PeopleView — Today / People / Birthdays / Carnegie tabs
@@ -51,7 +51,7 @@ src/
 
 ### Architecture rules (Phase 1 spec)
 
-1. **Markdown = source of truth.** The index is a cache: scanned at startup, then updated one person at a time as notes are created, edited, renamed or deleted.
+1. **Markdown = source of truth.** The index is a cache; it is invalidated on every vault change.
 2. **No hard-coded paths.** Every folder is accessed through `FolderService`. Settings expose four configurable folders.
 3. **`FolderService` is the only path gatekeeper.** Nothing else reads `settings.peopleFolder` directly.
 4. **`PersonRepository` owns all queries.** Views call it; they do not filter the raw list themselves.

@@ -8,7 +8,7 @@
 // Update flow:
 //   validate patch → processFrontMatter (patch, title/name sync, `updated`) →
 //   [rename file via fileManager.renameFile] → wait for metadata cache →
-//   update ONLY the affected person in PeopleIndex → onChanged (plugin refreshes views).
+//   refresh ONLY the affected PeopleIndex entry (the index then notifies views).
 //
 // Callers never see a TFile mutation API: everything goes through MarkdownStore.
 
@@ -19,7 +19,8 @@ import { generateId } from "../core/ids";
 import type { PeopleHubSettings } from "../core/settings";
 import type { Person } from "../models/Person";
 import { PERSON_ID_PREFIX, PERSON_NOTE_TYPE, PERSON_SCHEMA_VERSION } from "../models/Person";
-import { coerceValue, validateValue } from "../models/PropertyValidation";
+import { normalizePerson } from "../models/PersonNormalizer";
+import { validateValue } from "../models/PropertyValidation";
 import type { SchemaRegistry } from "../models/SchemaRegistry";
 import { personSchema } from "../models/SchemaRegistry";
 import { RepositoryError } from "./errors";
@@ -171,8 +172,7 @@ export class PersonRepository {
 
       const oldPath = file.path;
       if (renameTo) await this.store.rename(file, renameTo);
-      if (renameTo) this.moved(file, oldPath);
-      else if (result.changed) this.touched(file);
+      if (result.changed || renameTo) this.touched(file, renameTo ? oldPath : undefined);
       return this.record(file, result.after);
     });
   }
@@ -191,8 +191,7 @@ export class PersonRepository {
       const oldPath = file.path;
       let moved = false;
       if (!this.folders.contains("archive", file.path)) { await this.store.move(file, "archive"); moved = true; }
-      if (moved) this.moved(file, oldPath);
-      else if (result.changed) this.touched(file);
+      if (result.changed || moved) this.touched(file, moved ? oldPath : undefined);
       return this.record(file, result.after);
     });
   }
@@ -207,8 +206,7 @@ export class PersonRepository {
       const oldPath = file.path;
       let moved = false;
       if (this.folders.contains("archive", file.path)) { await this.store.move(file, "people"); moved = true; }
-      if (moved) this.moved(file, oldPath);
-      else if (result.changed) this.touched(file);
+      if (result.changed || moved) this.touched(file, moved ? oldPath : undefined);
       return this.record(file, result.after);
     });
   }
@@ -217,9 +215,10 @@ export class PersonRepository {
   async deletePerson(path: string): Promise<void> {
     const file = this.requirePerson(path);
     await this.store.exclusive(file.path, async () => {
-      const gone = file.path;
+      const oldPath = file.path;
       await this.store.trash(file);
-      this.removed(gone);
+      this.index.removePath(oldPath);
+      this.onChanged();
     });
   }
 
@@ -231,12 +230,16 @@ export class PersonRepository {
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
-  // Each write tells the index about exactly the note it touched (no vault re-scan), then notifies the
-  // plugin so views refresh. The metadata-cache watcher reports the same change again; the index
-  // ignores it because the note's properties are already what it has cached.
-  private touched(file: TFile)                  { this.index.upsert(file);          this.onChanged(); }
-  private moved(file: TFile, oldPath: string)   { this.index.rename(file, oldPath); this.onChanged(); }
-  private removed(path: string)                 { this.index.remove(path);          this.onChanged(); }
+  /**
+   * A note was created / changed / moved: re-parse just that note in the index. The store has
+   * already waited for Obsidian's cache, so this sees the new state. If the cache lags (e.g. right
+   * after a rename), the index self-heals from Obsidian's own events.
+   */
+  private touched(file: TFile, oldPath?: string) {
+    if (oldPath && oldPath !== file.path) this.index.removePath(oldPath);
+    this.index.refreshFile(file);
+    this.onChanged();
+  }
 
   private requirePerson(path: string): TFile {
     const file = this.store.getFile(path);
@@ -325,33 +328,7 @@ export class PersonRepository {
     };
   }
 
-  /**
-   * Frontmatter → canonical Person. Canonical keys win over legacy aliases; values are
-   * coerced to the registry type; fields a v0.2 note lacks get in-memory defaults
-   * (schema_version 0 marks "not migrated"). Reading never writes.
-   */
   private normalize(file: TFile, fm: FM): Person {
-    const out: FM = {};
-    for (const def of this.registry.all()) {
-      for (const k of [def.key, ...(def.legacyKeys ?? [])]) {
-        const v = coerceValue(def, fm[k]);
-        if (v !== undefined) { out[def.key] = v; break; }
-      }
-    }
-    const created = (out.created as string | undefined) ?? new Date(file.stat.ctime).toISOString();
-    const name = (out.name as string | undefined) ?? (out.display_name as string | undefined) ?? file.basename;
-    return {
-      ...out,
-      id: (out.id as string | undefined) ?? "",
-      id_prefix: PERSON_ID_PREFIX,
-      schema_version: (out.schema_version as number | undefined) ?? 0,
-      created,
-      created_date: (out.created_date as string | undefined) ?? created.slice(0, 10),
-      updated: (out.updated as string | undefined) ?? new Date(file.stat.mtime).toISOString(),
-      type: PERSON_NOTE_TYPE,
-      title: (out.title as string | undefined) ?? file.basename,
-      display_name: (out.display_name as string | undefined) ?? name,
-      name,
-    } as Person;
+    return normalizePerson(fm, { basename: file.basename, ctime: file.stat.ctime, mtime: file.stat.mtime }, this.registry);
   }
 }

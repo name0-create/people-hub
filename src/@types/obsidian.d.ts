@@ -29,6 +29,8 @@ declare module "obsidian" {
     create(path: string, data: string): Promise<TFile>;
     createFolder(path: string): Promise<void>;
     process(file: TFile, fn: (data: string) => string): Promise<string>;
+    /** URL usable in <img src> for a vault file. */
+    getResourcePath(file: TFile): string;
     rename(file: TAbstractFile, newPath: string): Promise<void>;
     on(name: "rename" | "delete" | "create" | "modify", cb: (file: TAbstractFile, oldPath?: string) => unknown): EventRef;
   }
@@ -42,6 +44,8 @@ declare module "obsidian" {
   }
 
   interface MetadataCache extends Events {
+    /** Resolve a [[link]] target (as written in a note at sourcePath) to a file. */
+    getFirstLinkpathDest(linkpath: string, sourcePath: string): TFile | null;
     getFileCache(file: TFile): { frontmatter?: Record<string, unknown>; links?: unknown[] } | null;
     on(name: "changed" | "deleted" | "resolved", cb: (file: TFile) => unknown): EventRef;
     off(name: "changed" | "deleted" | "resolved", cb: (file: TFile) => unknown): void;
@@ -77,7 +81,12 @@ declare module "obsidian" {
     app: App; leaf: WorkspaceLeaf; containerEl: HTMLElement; contentEl: HTMLElement;
     getViewType(): string; getDisplayText(): string; getIcon(): string;
     onOpen(): Promise<void>; onClose(): Promise<void>;
+    /** Add an icon button to the view header (top right of the tab). */
+    addAction(icon: string, title: string, cb: (evt: MouseEvent) => unknown): HTMLElement;
   }
+
+  /** Render a Lucide icon into an element. */
+  function setIcon(el: HTMLElement, iconId: string): void;
   class ItemView extends View { constructor(leaf: WorkspaceLeaf); }
 
   class Modal {
